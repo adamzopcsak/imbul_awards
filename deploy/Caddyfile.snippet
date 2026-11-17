@@ -1,0 +1,10 @@
+# Site block for /etc/caddy/Caddyfile (that file's copy lives in the repo adamzopcsak/yagismot_and_imbulstats,
+# deploy/Caddyfile, next to the other yagi.hu sites). HTTPS comes automatically once the DNS record points here.
+# The app sends its own strict Content-Security-Policy, so the shared security_headers keep theirs out of the way.
+
+# Imbul Awards: the Game Awards vote of the Imbul Discord (repo adamzopcsak/imbul_awards)
+imbulawards.yagi.hu {
+	encode gzip
+	import security_headers
+	reverse_proxy 127.0.0.1:8006
+}
