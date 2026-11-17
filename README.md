@@ -8,7 +8,8 @@ Every category of The Game Awards 2026 has two votes:
 1. **Szerinted ki fogja megkapni a díjat?** (🔮, who you think will win)
 2. **Te kinek adnád a díjat?** (❤️, who you would give it to)
 
-Clicking a nominee saves the vote at once; clicking it again takes it back. Votes can be changed until the deadline in
+Every category also offers **🤷 Ötletem sincs, ember** (stored as nominee `-1`) for those who would rather not
+guess; it is counted separately on the admin page and is never a correct guess. Clicking an answer saves the vote at once; clicking it again takes it back. Votes can be changed until the deadline in
 `nominees.json` (`votingClosesAt`), after which the ballot is read-only.
 
 ## Who can get in

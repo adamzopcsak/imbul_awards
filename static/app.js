@@ -2,7 +2,10 @@
 // leaderboard, access). All requests go to the API next to this page (/api/...).
 "use strict";
 
-const KIND_LABELS = { predict: "🔮 Szerinted ki nyeri?", pick: "❤️ Te kinek adnád?" };
+// The answer offered in every category next to the nominees, for those who would rather not guess
+const NO_IDEA = -1;
+const NO_IDEA_LABEL = "🤷 Ötletem sincs, ember";
+const KIND_LABELS ={ predict: "🔮 Szerinted ki nyeri?", pick: "❤️ Te kinek adnád?" };
 const LOGIN_ERRORS = {
   "nincs-jog": "Beléptél, de még nincs jogod szavazni. Szólj yaginak, és beenged.",
   sikertelen: "A Discord belépés nem sikerült, próbáld újra.",
@@ -86,7 +89,7 @@ function nomineeButton(category, kind, index, nominee) {
   const chosen = state.votes[category.id] && state.votes[category.id][kind] === index;
   return h("button", {
     type: "button",
-    class: "nominee",
+    class: index === NO_IDEA ? "nominee no-idea" : "nominee",
     "aria-pressed": chosen ? "true" : "false",
     disabled: state.ballot.closed,
     onclick: () => vote(category.id, kind, chosen ? null : index),
@@ -104,7 +107,8 @@ function categoryCard(category) {
     h("div", { class: "kinds" }, ...["predict", "pick"].map((kind) =>
       h("div", { class: `kind ${kind}` }, h("h3", {}, KIND_LABELS[kind]),
         h("div", { class: "nominees" },
-          ...category.nominees.map((nominee, index) => nomineeButton(category, kind, index, nominee)))))));
+          ...category.nominees.map((nominee, index) => nomineeButton(category, kind, index, nominee)),
+          nomineeButton(category, kind, NO_IDEA, { name: NO_IDEA_LABEL }))))));
 }
 
 function renderBallot() {
@@ -142,6 +146,7 @@ function rerenderCategory(categoryId) {
 // --- Admin
 
 function nomineeName(category, index) {
+  if (index === NO_IDEA) return NO_IDEA_LABEL;
   const nominee = category.nominees[index];
   if (!nominee) return "?";
   // Two nominees can share a name (Team Falcons): the detail tells them apart
@@ -152,12 +157,12 @@ function nomineeName(category, index) {
 function totalsCard(category) {
   const totals = state.summary.totals[category.id];
   const winner = state.summary.winners[category.id];
-  const max = Math.max(1, ...totals.predict, ...totals.pick);
+  const max = Math.max(1, ...totals.predict, ...totals.pick, totals.noIdea.predict, totals.noIdea.pick);
+  const bar = (kind, count) => h("td", { class: `count ${kind}` },
+    h("span", { class: "mini-bar", style: `width:${(count / max) * 100}%` }), h("b", {}, String(count)));
   const rows = category.nominees.map((nominee, index) => h("tr", { class: winner === index ? "winner" : "" },
     h("th", { scope: "row" }, nomineeName(category, index)),
-    ...["predict", "pick"].map((kind) => h("td", { class: `count ${kind}` },
-      h("span", { class: "mini-bar", style: `width:${(totals[kind][index] / max) * 100}%` }),
-      h("b", {}, String(totals[kind][index])))),
+    ...["predict", "pick"].map((kind) => bar(kind, totals[kind][index])),
     h("td", {}, h("button", {
       type: "button",
       class: "trophy",
@@ -165,6 +170,8 @@ function totalsCard(category) {
       title: winner === index ? "Nyertes (kattints a visszavonáshoz)" : "Megjelölöm nyertesként",
       onclick: () => setWinner(category.id, winner === index ? null : index),
     }, "🏆"))));
+  rows.push(h("tr", { class: "no-idea" }, h("th", { scope: "row" }, NO_IDEA_LABEL),
+    bar("predict", totals.noIdea.predict), bar("pick", totals.noIdea.pick), h("td", {})));
   return h("article", { class: "panel category" },
     h("header", { class: "category-head" }, h("h2", {}, category.name), h("span", { class: "original" }, category.original)),
     h("div", { class: "table-wrap" }, h("table", { class: "totals-table" },

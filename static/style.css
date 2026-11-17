@@ -128,6 +128,10 @@ button.small { padding: .3rem .7rem; font-size: .85rem; }
 .nominee[aria-pressed="true"] .nominee-name::before { content: "✓ "; color: var(--kind); }
 .nominee:disabled:not([aria-pressed="true"]) { opacity: .55; }
 .nominee-detail { color: var(--muted); font-size: .78rem; font-weight: 400; }
+/* "Ötletem sincs, ember": set apart from the nominees */
+.nominee.no-idea { margin-top: 4px; border-style: dashed; background: transparent; color: var(--muted); font-weight: 500; }
+.nominee.no-idea[aria-pressed="true"] { color: var(--fg); background: color-mix(in srgb, var(--kind) 20%, var(--input)); }
+.totals-table tr.no-idea th { color: var(--muted); font-weight: 500; }
 
 /* People */
 .person { display: inline-flex; align-items: center; gap: .6rem; min-width: 0; }
@@ -154,7 +158,13 @@ table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 th, td { padding: .4rem .6rem; text-align: left; border-bottom: 1px solid var(--border); vertical-align: middle; }
 thead th { color: var(--muted); font-weight: 600; font-size: .8rem; white-space: nowrap; }
 tbody th { font-weight: 600; }
-.totals-table td.count { position: relative; width: 22%; min-width: 90px; }
+/* Fixed columns, so they line up from one category to the next */
+.totals-table { table-layout: fixed; }
+.totals-table thead th:first-child { width: auto; }
+.totals-table thead th:nth-child(2), .totals-table thead th:nth-child(3) { width: 24%; }
+.totals-table thead th:last-child { width: 56px; }
+.totals-table tbody th { overflow-wrap: anywhere; }
+.totals-table td.count { position: relative; min-width: 90px; }
 .mini-bar { position: absolute; left: 0; top: 20%; bottom: 20%; border-radius: 0 4px 4px 0; opacity: .3; }
 .count.predict .mini-bar { background: var(--predict); }
 .count.pick .mini-bar { background: var(--pick); }

@@ -246,10 +246,29 @@ class VoteTests(ServerTest):
 
     def test_bad_votes_are_refused(self):
         for category, kind, nominee in (("nope", "predict", 0), ("goty", "maybe", 0), ("goty", "pick", 6),
-                                        ("goty", "pick", -1), ("goty", "pick", "1"), ("goty", "pick", True)):
+                                        ("goty", "pick", -2), ("goty", "pick", "1"), ("goty", "pick", True),
+                                        ("goty", "pick", -1.0)):
             with self.subTest(category=category, kind=kind, nominee=nominee):
                 response, _ = self.vote(self.friend, category, kind, nominee)
                 self.assertEqual(response.status, 400)
+
+    def test_no_idea_is_an_answer_in_every_category(self):
+        response, body = self.vote(self.friend, "goty", "predict", server.NO_IDEA)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["votes"], {"goty": {"predict": -1}})
+        self.vote(self.admin, "goty", "predict", server.NO_IDEA)
+        self.vote(self.admin, "goty", "pick", 0)
+        _, summary = self.request("GET", "/api/admin/summary", cookie=self.admin)
+        self.assertEqual(summary["totals"]["goty"]["noIdea"], {"predict": 2, "pick": 0})
+        self.assertEqual(summary["totals"]["goty"]["predict"], [0] * 6)
+        self.assertEqual(summary["totals"]["rpg"]["noIdea"], {"predict": 0, "pick": 0})
+        # It is never a winner, and never a correct guess
+        response, _ = self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": -1},
+                                   cookie=self.admin)
+        self.assertEqual(response.status, 400)
+        _, summary = self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": 0},
+                                  cookie=self.admin)
+        self.assertEqual({s["id"]: s["correct"] for s in summary["scores"]}, {ADMIN: 0, FRIEND: 0})
 
     def test_strangers_cannot_vote(self):
         response, _ = self.vote(None, "goty", "pick", 0)

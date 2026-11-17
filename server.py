@@ -13,7 +13,8 @@ Paths:
   POST   /logout                    log out
   GET    /api/me                    who is logged in (401 if nobody, 403 if they may not vote)
   GET    /api/ballot                the categories, the nominees and my votes
-  PUT    /api/votes                 {"category", "kind": "predict" | "pick", "nominee": index or null}
+  PUT    /api/votes                 {"category", "kind": "predict" | "pick", "nominee": index, -1 or null}
+                                    (-1 is "Ötletem sincs, ember", null takes the vote back)
 Admin only:
   GET    /api/admin/summary         every vote, the totals, the winners and the guessing leaderboard
   PUT    /api/admin/winners         {"category", "nominee": index or null}: the real winner
@@ -74,6 +75,7 @@ SESSION_DAYS = 30
 STATE_SECONDS = 600
 MAX_BODY_BYTES = 4_000
 KINDS = ("predict", "pick")
+NO_IDEA = -1  # the "Ötletem sincs, ember" answer, offered in every category next to the nominees
 USER_ID = re.compile(r"[1-9][0-9]{15,20}")  # a Discord snowflake, kept as a string (too big for a JavaScript number)
 AVATAR_HASH = re.compile(r"(a_)?[0-9a-f]{32}")
 SECURITY_HEADERS = {
@@ -165,12 +167,13 @@ class Ballot:
     def closed(self):
         return datetime.now(timezone.utc) >= self.closes_at
 
-    def check(self, category_id, nominee):
-        """ValidationError unless `nominee` is an index in that category (None is allowed: no vote)."""
+    def check(self, category_id, nominee, allow_no_idea=False):
+        """ValidationError unless `nominee` is an index in that category (None is allowed: no vote; NO_IDEA too,
+        for a vote, but never as a winner)."""
         category = self.by_id.get(category_id)
         if category is None:
             raise ValidationError("Nincs ilyen kategória.")
-        if nominee is None:
+        if nominee is None or (allow_no_idea and type(nominee) is int and nominee == NO_IDEA):
             return
         if isinstance(nominee, bool) or not isinstance(nominee, int) or not 0 <= nominee < len(category["nominees"]):
             raise ValidationError("Nincs ilyen jelölt.")
@@ -379,12 +382,15 @@ class App:
         votes = self.store.all_votes()
         winners = self.store.winners()
         voters = sorted({vote["user_id"] for vote in votes}, key=lambda uid: self.person(uid, users)["name"].lower())
-        totals = {c["id"]: {kind: [0] * len(c["nominees"]) for kind in KINDS} for c in self.ballot.categories}
+        totals = {c["id"]: {**{kind: [0] * len(c["nominees"]) for kind in KINDS}, "noIdea": dict.fromkeys(KINDS, 0)}
+                  for c in self.ballot.categories}
         by_user = {uid: {} for uid in voters}
         for vote in votes:
             counts = totals.get(vote["category"], {}).get(vote["kind"])
             if counts is not None and 0 <= vote["nominee"] < len(counts):
                 counts[vote["nominee"]] += 1
+            elif counts is not None and vote["nominee"] == NO_IDEA:
+                totals[vote["category"]]["noIdea"][vote["kind"]] += 1
             by_user[vote["user_id"]].setdefault(vote["category"], {})[vote["kind"]] = vote["nominee"]
         scores = []
         for uid in voters:
@@ -648,7 +654,7 @@ class Handler(BaseHTTPRequestHandler):
         body = self._body()
         if body.get("kind") not in KINDS:
             raise ValidationError("kind: predict vagy pick")
-        self.app.ballot.check(body.get("category"), body.get("nominee"))
+        self.app.ballot.check(body.get("category"), body.get("nominee"), allow_no_idea=True)
         if self.app.ballot.closed():
             return self._error(HTTPStatus.CONFLICT, "A szavazás lezárult.")
         self.app.store.vote(user_id, body["category"], body["kind"], body.get("nominee"))
