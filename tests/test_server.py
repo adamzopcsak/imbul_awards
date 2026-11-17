@@ -555,6 +555,15 @@ class ImageTests(unittest.TestCase):
     def test_pictures_are_allowed_by_the_page_policy(self):
         policy = server.SECURITY_HEADERS["Content-Security-Policy"]
         self.assertIn("https://upload.wikimedia.org", policy)
+        self.assertIn("https://shared.akamai.steamstatic.com", policy)
+
+    def test_steam_store_pictures_only(self):
+        ok = "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/2307350/library_600x900.jpg"
+        self.assertRegex(ok, server.IMAGE_URL)
+        for bad in ("https://shared.akamai.steamstatic.com/other/x.jpg", "https://evil.steamstatic.com.example/x.jpg",
+                    "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/x/y.jpg"):
+            with self.subTest(url=bad):
+                self.assertIsNone(server.IMAGE_URL.fullmatch(bad))
 
 
 class WelcomePageTests(unittest.TestCase):

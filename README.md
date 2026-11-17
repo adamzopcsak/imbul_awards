@@ -95,7 +95,9 @@ sources are in the file.
 poster or photo; for a user creation, the game it was made for). `scripts/fetch_images.py` finds them; run it again
 after changing the nominees (it only looks up the new names). Wrong matches are fixed in its `OVERRIDES`. The pictures
 are not copied into the repo: the page loads them from `upload.wikimedia.org` (allowed in the Content-Security-Policy,
-sent without a referrer). A nominee without a picture, or whose picture does not load, gets its initials instead.
+sent without a referrer). Four games Wikipedia has no picture for use their official Steam store image (`DIRECT` in the
+script, from `shared.akamai.steamstatic.com`); a landscape picture is shown whole over a blurred copy of itself. A
+nominee whose picture does not load gets its initials instead.
 
 ## How it works
 

@@ -1,6 +1,7 @@
 """Finds a picture for every nominee on English Wikipedia and writes images.json ({nominee name: {title, url}}).
 
-The page shows these pictures straight from upload.wikimedia.org (they are not copied into the repo). Run it again
+The page shows these pictures straight from upload.wikimedia.org, and a few from Steam's store (DIRECT); they are not
+copied into the repo. Run it again
 after changing nominees.json; names already in images.json are kept, so checked or hand-fixed entries stay. Names
 in OVERRIDES use that Wikipedia article instead of a search; None means no picture (the page draws a placeholder).
 
@@ -34,8 +35,22 @@ SEARCH_HINT = {
     "esports-game": "video game",
 }
 
+# Games Wikipedia has no picture for: their official Steam store image (checked by hand). The newer apps have no
+# portrait cover, only the landscape header; the page shows a landscape picture whole, over a blurred copy of itself.
+STEAM = "https://shared.akamai.steamstatic.com/store_item_assets/steam/apps/"
+DIRECT = {
+    "Forefront": ("Steam 2981220", STEAM + "2981220/298dddf5fdb7f091f7cc863b7f572e1e9df23dce/header.jpg"),
+    "Into the Radius 2": ("Steam 2307350", STEAM + "2307350/library_600x900.jpg"),
+    "Teenage Mutant Ninja Turtles: Empire City": ("Steam 3713650",
+                                                  STEAM + "3713650/b90ef5253a5ed86410cbbe2915e4286d46d7d9f6/header.jpg"),
+    "lily's world XD": ("Steam 3195580", STEAM + "3195580/library_600x900.jpg"),
+}
+
 # Nominee name -> Wikipedia article (checked by hand), or None for no picture
 OVERRIDES = {
+    # No free photo of them: their team's logo, and the game of her videos
+    "Yatoro": "Team Spirit (esports)",
+    "LilSimsie": "The Sims 4",
     # Best Performance: the cover of the role's game
     "Angela Sant'Albano": "Resident Evil Requiem",
     "Liam McIntyre": "Marvel's Wolverine",
@@ -47,20 +62,16 @@ OVERRIDES = {
     "Counter-Strike 2": "Counter-Strike 2",
     "Fallout (2. évad)": "Fallout (American TV series)",
     "Fortnite": "Fortnite Battle Royale",
-    "Into the Radius 2": "Into the Radius 2",
     "League of Legends": "League of Legends",
-    "lily's world XD": "Lily's World XD",
     "Mobile Legends: Bang Bang": "Mobile Legends: Bang Bang",
     "My Hero Academia: All's Justice": "My Hero Academia: All's Justice",
     "Nopixel V": "Grand Theft Auto Online",
     "Resident Evil": "Resident Evil (2026 film)",
     "Slay the Spire 2": "Slay the Spire 2",
     "Star Wars Droid Tycoon": "Fortnite Battle Royale",
-    "Teenage Mutant Ninja Turtles: Empire City": "Teenage Mutant Ninja Turtles: Empire City",
     "The Witcher 4": "The Witcher IV",
     "Trails in the Sky 2nd Chapter": "Trails in the Sky 2nd Chapter",
     "TTK Testing": "Roblox",
-    "Yatoro": "Yatoro",
 }
 
 
@@ -119,7 +130,8 @@ def query_for(category_id, name, detail):
 
 
 def save(images):
-    IMAGES.write_text(json.dumps(dict(sorted(images.items())), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    IMAGES.write_text(json.dumps(dict(sorted(images.items())), ensure_ascii=False, indent=1) + "\n", encoding="utf-8",
+                      newline="\n")
 
 
 def main():
@@ -130,6 +142,10 @@ def main():
     categories = json.loads(NOMINEES.read_text(encoding="utf-8"))["categories"]
     for category in categories:
         for name, detail in category["nominees"]:
+            if name in DIRECT:
+                title, url = DIRECT[name]
+                images[name] = {"title": title, "url": url}
+                continue
             if name in images and name not in OVERRIDES:
                 continue
             title = OVERRIDES[name] if name in OVERRIDES else search(query_for(category["id"], name, detail))

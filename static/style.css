@@ -519,3 +519,14 @@ button.revoke:hover { color: var(--red); border-color: var(--red); filter: none;
 td.real { color: var(--real); font-weight: 600; }
 .real-select { max-width: 220px; font-size: .85rem; }
 .reveal-table td.has-real .real-select { border-color: var(--real); color: var(--real); }
+
+/* Landscape pictures (Steam headers): whole, over a blurred, darkened copy that fills the card */
+.card .art.wide { display: grid; place-items: center; }
+.card .art.wide::before {
+  content: "";
+  position: absolute;
+  inset: -12%;
+  background: var(--art) center / cover no-repeat;
+  filter: blur(14px) brightness(.55);
+}
+.card .art.wide img { position: relative; height: auto; object-fit: contain; }
