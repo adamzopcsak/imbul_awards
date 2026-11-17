@@ -775,7 +775,7 @@ class Handler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.OK, {**self.app.person(user_id), "isAdmin": self.app.is_admin(user_id)})
 
     def _reveal(self):
-        """For the yagi.hu hub (proxied there as /hamarosan.json): the icon, name and link of its "Imbul ******" tile, but
+        """For the yagi.hu hub (proxied there as /hamarosan/2.json): the icon, name and link of its "Imbul ******" tile, but
         only from opensAt on. Until then 404, so nothing about it is public before the reveal."""
         if not self.app.ballot.opened():
             return self._error(HTTPStatus.NOT_FOUND, "Még nem.")

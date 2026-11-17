@@ -67,7 +67,7 @@ As on Imbul Stats, **Admin → Hozzáférés** has two buttons:
 **The reveal, 2026-12-01 10:00** (`opensAt` in `nominees.json`), happens by itself:
 
 - The yagi.hu hub shows the project as **Imbul ******** ("Hamarosan", a countdown, no name or link; the linked tile is
-  in the hub's admin-only `private/tiles.js` until then). At zero the hub asks `/hamarosan.json`, which Caddy passes
+  in the hub's admin-only `private/tiles.js` until then). At zero the hub asks `/hamarosan/2.json`, which Caddy passes
   to this app's `GET /api/reveal`: 404 before `opensAt`, the name, link and description from then on. The tile
   becomes a link, on open pages too, without a deploy.
 - From the same moment every member of the server gets in, as if **Jogosultság adása mindenkinek a szerveren** had
@@ -140,7 +140,7 @@ every deploy.
    admin id is the same as `DASHBOARD_ADMIN_USERS` in Imbul Stats' `.env`.
 4. **Caddy:** add the block in `deploy/Caddyfile.snippet` to `/etc/caddy/Caddyfile` (and to its copy in the
    yagismot_and_imbulstats repo), and install the yagi.hu repo's `server/yagi-admin.caddy.example` again (it has the
-   `/hamarosan.json` route for the reveal), then `systemctl reload caddy`. Both before 2026-12-01 10:00.
+   `/hamarosan/2.json` route for the reveal), then `systemctl reload caddy`. Both before 2026-12-01 10:00.
 5. Run `./deploy.sh`.
 
 ## Deploy
