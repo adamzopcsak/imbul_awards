@@ -149,7 +149,14 @@ function artEl(nominee, index) {
     // A picture that does not load becomes the placeholder
     img.addEventListener("error", () => img.replaceWith(h("span", { class: "art placeholder" }, initials(nominee.name))));
     // Logos (rendered from an SVG) are often transparent with dark text: shown whole, on a light background
-    return h("span", { class: /\.svg\//i.test(nominee.image) ? "art logo" : "art" }, img);
+    const art = h("span", { class: /\.svg\//i.test(nominee.image) ? "art logo" : "art" }, img);
+    // A landscape picture (a Steam header) would lose its sides in the portrait card: shown whole, over a blurred copy
+    img.addEventListener("load", () => {
+      if (art.classList.contains("logo") || img.naturalWidth < img.naturalHeight * 1.2) return;
+      art.style.setProperty("--art", `url("${nominee.image}")`);
+      art.classList.add("wide");
+    });
+    return art;
   }
   return h("span", { class: "art placeholder" }, initials(nominee.name));
 }

@@ -64,8 +64,9 @@ APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 NOMINEES_FILE = APP_DIR / "nominees.json"
 IMAGES_FILE = APP_DIR / "images.json"
-# The nominees' pictures are shown straight from Wikimedia (see scripts/fetch_images.py)
-IMAGE_URL = re.compile(r"https://(upload|thumb)\.wikimedia\.org/[A-Za-z0-9_./%()'!,~+-]+")
+# The nominees' pictures are shown straight from Wikimedia, a few from Steam's store (see scripts/fetch_images.py)
+IMAGE_URL = re.compile(r"https://(upload|thumb)\.wikimedia\.org/[A-Za-z0-9_./%()'!,~+-]+"
+                       r"|https://shared\.akamai\.steamstatic\.com/store_item_assets/steam/apps/[0-9]+/[A-Za-z0-9_./-]+")
 VERSION_FILE = APP_DIR / "version.json"
 PREFIX = ""  # the app has the whole of imbulawards.yagi.hu
 STATIC_FILES = {
@@ -97,7 +98,8 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
     "Content-Security-Policy": "default-src 'self'; "
-                               "img-src 'self' https://cdn.discordapp.com https://upload.wikimedia.org https://thumb.wikimedia.org; "
+                               "img-src 'self' https://cdn.discordapp.com https://upload.wikimedia.org https://thumb.wikimedia.org "
+                               "https://shared.akamai.steamstatic.com; "
                                "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     "X-Robots-Tag": "noindex",
 }
