@@ -572,12 +572,19 @@ function renderScores() {
 // Access, as on Imbul Stats: everyone or nobody at once, one by one by Discord id, the refused logins, and the list
 // of everyone with access (taken away ones stay on it, to be given back)
 function renderAccess() {
-  const { everyone, people, refused, allowedNow } = state.access;
+  const { everyone, everyoneAuto, opensAt, people, refused, allowedNow } = state.access;
   const handle = (p) => `${p.username ? "@" + p.username + " · " : ""}${p.id}`;
   const when = (iso) => dateTime.format(new Date(iso));
-  $("everyone-state").textContent = everyone
-    ? "✅ Most a szerver minden tagja beléphet."
-    : "🔒 Most csak az adminok és a listán szereplők léphetnek be.";
+  if (everyone) {
+    $("everyone-state").textContent = everyoneAuto
+      ? `✅ Most a szerver minden tagja beléphet (magától kapcsolt be: ${when(opensAt)}).`
+      : "✅ Most a szerver minden tagja beléphet.";
+  } else if (everyoneAuto && opensAt) {
+    $("everyone-state").textContent = `🕙 ${when(opensAt)}-kor magától bekapcsol: onnantól a szerver minden tagja `
+      + "beléphet (a yagi.hu csempéje is ekkor fedi fel magát). Addig csak az adminok és a listán szereplők.";
+  } else {
+    $("everyone-state").textContent = "🔒 Most csak az adminok és a listán szereplők léphetnek be.";
+  }
   $("everyone-state").className = `everyone-state${everyone ? " on" : ""}`;
   $("grant-everyone").disabled = everyone;
 

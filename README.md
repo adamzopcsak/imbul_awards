@@ -40,7 +40,7 @@ everyone in the "who will win" row, kept apart from the server's own results:
   the "who would you give it to" rows, once shown with Mutatás mindenkinek.
 
 To try it locally: `python server.py --port 8006 --data data --dev-login --closes-at 2026-11-01T00:00:00+01:00`
-(`--closes-at` works only with `--dev-login`).
+(`--closes-at` and `--opens-at` work only with `--dev-login`).
 
 ## Who can get in
 
@@ -64,8 +64,15 @@ As on Imbul Stats, **Admin → Hozzáférés** has two buttons:
   on the list and can be given back one by one (**Visszaadás**); one taken away (**Elvétel**) stays out even while
   everyone on the server may vote.
 
-The yagi.hu hub shows the project as **Imbul ******** ("Hamarosan", no link). The real tile, linking here, is in the
-hub's admin-only `private/tiles.js`.
+**The reveal, 2026-12-01 10:00** (`opensAt` in `nominees.json`), happens by itself:
+
+- The yagi.hu hub shows the project as **Imbul ******** ("Hamarosan", a countdown, no name or link; the linked tile is
+  in the hub's admin-only `private/tiles.js` until then). At zero the hub asks `/hamarosan.json`, which Caddy passes
+  to this app's `GET /api/reveal`: 404 before `opensAt`, the name, link and description from then on. The tile
+  becomes a link, on open pages too, without a deploy.
+- From the same moment every member of the server gets in, as if **Jogosultság adása mindenkinek a szerveren** had
+  been pressed. Pressing either access button by hand before (or after) wins over this: "mindenkinek" opens it at
+  once, "megvonás mindenkitől" keeps it closed even after `opensAt`.
 
 ## Admin
 
@@ -132,7 +139,8 @@ every deploy.
 3. **Settings:** copy `deploy/imbul-awards.env.example` to `/etc/imbul-awards.env` (`chmod 600`) and fill it in. The
    admin id is the same as `DASHBOARD_ADMIN_USERS` in Imbul Stats' `.env`.
 4. **Caddy:** add the block in `deploy/Caddyfile.snippet` to `/etc/caddy/Caddyfile` (and to its copy in the
-   yagismot_and_imbulstats repo), then `systemctl reload caddy`.
+   yagismot_and_imbulstats repo), and install the yagi.hu repo's `server/yagi-admin.caddy.example` again (it has the
+   `/hamarosan.json` route for the reveal), then `systemctl reload caddy`. Both before 2026-12-01 10:00.
 5. Run `./deploy.sh`.
 
 ## Deploy

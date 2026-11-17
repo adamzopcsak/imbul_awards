@@ -12,6 +12,7 @@ Paths:
   GET    /auth/callback             back from Discord
   POST   /logout                    log out
   GET    /api/status                whether voting is closed (public, for the welcome page)
+  GET    /api/reveal                the hub tile's name and link, from opensAt on (404 before; public)
   GET    /api/me                    who is logged in (401 if nobody, 403 if they may not vote)
   GET    /api/ballot                the categories, the nominees and my votes; after the deadline also the shown
                                     results and the real winners (/api/admin/winners)
@@ -191,6 +192,9 @@ class Ballot:
         self.title = data["title"]
         self.ceremony = data.get("ceremony", "")
         self.closes_at = datetime.fromisoformat(data["votingClosesAt"])
+        # The reveal: from then on the yagi.hu hub shows the name and link, and every member of the server may vote
+        # (unless the admin decided otherwise on the admin page)
+        self.opens_at = datetime.fromisoformat(data["opensAt"]) if data.get("opensAt") else None
         self.categories = data["categories"]
         self.by_id = {category["id"]: category for category in self.categories}
         # {nominee name: {title, url}} from scripts/fetch_images.py; a nominee without one gets a placeholder
@@ -200,6 +204,9 @@ class Ballot:
 
     def closed(self):
         return datetime.now(timezone.utc) >= self.closes_at
+
+    def opened(self):
+        return self.opens_at is not None and datetime.now(timezone.utc) >= self.opens_at
 
     def check(self, category_id, nominee, allow_no_idea=False):
         """ValidationError unless `nominee` is an index in that category (None is allowed: no vote; NO_IDEA too,
@@ -217,6 +224,7 @@ class Ballot:
             "title": self.title,
             "ceremony": self.ceremony,
             "closesAt": self.closes_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "opensAt": self.opens_at and self.opens_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
             "closed": self.closed(),
             "categories": [{"id": c["id"], "name": c["name"], "original": c["original"],
                             "nominees": [{"name": n[0], "detail": n[1], "image": self.images.get(n[0])}
@@ -318,8 +326,15 @@ class Store:
 
     # --- "Everyone on the server"
 
-    def everyone(self):
-        return any(row["value"] == "1" for row in self._read("SELECT value FROM settings WHERE key = 'everyone'"))
+    def everyone_setting(self):
+        """True or False as the admin last set it on the admin page, or None if never touched."""
+        rows = self._read("SELECT value FROM settings WHERE key = 'everyone'")
+        return rows[0]["value"] == "1" if rows else None
+
+    def everyone(self, opened=False):
+        """Whether every member of the server gets in: as the admin set it, or, if never touched, from the reveal on."""
+        setting = self.everyone_setting()
+        return opened if setting is None else setting
 
     def grant_everyone(self, by):
         """From now on every member of the server gets in at their Discord login; those taken away get it back.
@@ -462,6 +477,9 @@ class App:
     def is_admin(self, user_id):
         return user_id in self.config.admins
 
+    def everyone(self):
+        return self.store.everyone(self.ballot.opened())
+
     def may_vote(self, user_id):
         return self.is_admin(user_id) or self.store.is_granted(user_id)
 
@@ -551,7 +569,10 @@ class App:
         people = seen + sorted((p for p in people if not p["lastSeen"]), key=lambda p: p["name"].lower())
         refused = self.store.refused()
         return {
-            "everyone": self.store.everyone(),
+            "everyone": self.everyone(),
+            # Never set by hand: it switches on by itself at the reveal
+            "everyoneAuto": self.store.everyone_setting() is None,
+            "opensAt": self.ballot.public()["opensAt"],
             "people": people,
             "allowedNow": sum(1 for p in people if not p["revoked"]),
             "refused": sorted(({**self.person(uid, users), "lastAt": row["last_at"], "attempts": row["attempts"]}
@@ -677,6 +698,7 @@ class Handler(BaseHTTPRequestHandler):
             PREFIX + "/auth/callback": self._callback,
             PREFIX + "/dev-login": self._dev_login,
             PREFIX + "/api/status": self._status,
+            PREFIX + "/api/reveal": self._reveal,
             PREFIX + "/api/me": self._me,
             PREFIX + "/api/ballot": self._ballot,
             PREFIX + "/api/admin/summary": self._summary,
@@ -701,7 +723,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._redirect(PREFIX + "/?hiba=beallitas")
         state = secrets.token_urlsafe(24)
         # While everyone on the server may vote, Discord is also asked which servers they are in
-        scope = "identify guilds" if self.app.store.everyone() else "identify"
+        scope = "identify guilds" if self.app.everyone() else "identify"
         query = urllib.parse.urlencode({"client_id": config.client_id, "response_type": "code",
                                         "redirect_uri": config.redirect_uri, "scope": scope,
                                         "state": state, "prompt": "none"})
@@ -716,7 +738,7 @@ class Handler(BaseHTTPRequestHandler):
         if "error" in query or not query.get("code") or not saved or not hmac.compare_digest(saved.get("s", ""), state):
             return self._redirect(PREFIX + "/?hiba=sikertelen", cookies=[clear_state])
         try:
-            me = self.discord_user(self.app.config, query["code"], self.app.store.everyone())
+            me = self.discord_user(self.app.config, query["code"], self.app.everyone())
             user = clean_user(me)
         except (urllib.error.URLError, OSError, ValueError, KeyError):
             return self._redirect(PREFIX + "/?hiba=sikertelen", cookies=[clear_state])
@@ -736,7 +758,7 @@ class Handler(BaseHTTPRequestHandler):
     def _finish_login(self, user, cookies, guild_ids=()):
         store = self.app.store
         store.remember_user(user)
-        if (not self.app.may_vote(user["id"]) and store.everyone() and self.app.config.guild_id in guild_ids
+        if (not self.app.may_vote(user["id"]) and self.app.everyone() and self.app.config.guild_id in guild_ids
                 and not store.is_revoked(user["id"])):
             store.grant(user["id"], EVERYONE)  # on the server while everyone may vote: in, and on the list
         if not self.app.may_vote(user["id"]):
@@ -751,6 +773,15 @@ class Handler(BaseHTTPRequestHandler):
             return
         self.app.store.touch(user_id)  # "Utoljára" on the admin page's access list
         self._json(HTTPStatus.OK, {**self.app.person(user_id), "isAdmin": self.app.is_admin(user_id)})
+
+    def _reveal(self):
+        """For the yagi.hu hub (proxied there as /hamarosan.json): the name and link of its "Imbul ******" tile, but
+        only from opensAt on. Until then 404, so nothing about it is public before the reveal."""
+        if not self.app.ballot.opened():
+            return self._error(HTTPStatus.NOT_FOUND, "Még nem.")
+        self._json(HTTPStatus.OK, {"name": "Imbul Awards", "url": self.app.config.public_url,
+                                   "host": urllib.parse.urlsplit(self.app.config.public_url).netloc,
+                                   "description": "A The Game Awards 2026, Imbul módra: szerinted ki nyer, és te kinek adnád?"})
 
     def _status(self):
         self._json(HTTPStatus.OK, {"closed": self.app.ballot.closed(), "closesAt": self.app.ballot.public()["closesAt"]})
@@ -886,6 +917,7 @@ def main():
     parser.add_argument("--dev-login", action="store_true", help="local testing without Discord (never on https)")
     parser.add_argument("--closes-at", help="local testing with --dev-login: another voting deadline, e.g. "
                                             "2026-11-01T00:00:00+01:00 to see the Díjazottak page")
+    parser.add_argument("--opens-at", help="local testing with --dev-login: another reveal time (opensAt)")
     args = parser.parse_args()
     config = Config(dev_login=args.dev_login)
     app = App(config, args.data)
@@ -893,6 +925,10 @@ def main():
         if not config.dev_login:
             parser.error("--closes-at only works with --dev-login, on plain http")
         app.ballot.closes_at = datetime.fromisoformat(args.closes_at)
+    if args.opens_at:
+        if not config.dev_login:
+            parser.error("--opens-at only works with --dev-login, on plain http")
+        app.ballot.opens_at = datetime.fromisoformat(args.opens_at)
     server = make_server(args.host, args.port, app)
     if not config.admins:
         print("Warning: AWARDS_ADMIN_USERS is empty, nobody can log in.", flush=True)

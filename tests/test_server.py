@@ -28,6 +28,7 @@ class ServerTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         nominees = json.loads(server.NOMINEES_FILE.read_text(encoding="utf-8"))
         nominees["votingClosesAt"] = self.closes_at
+        nominees["opensAt"] = "2098-01-01T00:00:00+01:00"  # not open to everyone by itself, whatever today is
         ballot_file = Path(self.tmp.name) / "nominees.json"
         ballot_file.write_text(json.dumps(nominees), encoding="utf-8")
         config = server.Config(env={
@@ -395,6 +396,52 @@ class ClosedVoteTests(ServerTest):
         response, _ = self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": 0},
                                    cookie=admin)
         self.assertEqual(response.status, 200)
+
+
+class OpeningTests(ServerTest):
+    """opensAt: the yagi.hu hub reveals the tile, and every member of the server gets in, without anyone acting."""
+
+    def open_now(self):
+        self.app.ballot.opens_at = server.datetime(2020, 1, 1, tzinfo=server.timezone.utc)
+
+    def test_reveal_answer_only_from_the_opening(self):
+        self.app.ballot.opens_at = server.datetime(2099, 1, 1, tzinfo=server.timezone.utc)
+        response, body = self.request("GET", "/api/reveal")
+        self.assertEqual(response.status, 404)
+        self.assertNotIn("Awards", json.dumps(body))
+        self.open_now()
+        response, body = self.request("GET", "/api/reveal")
+        self.assertEqual(response.status, 200)
+        self.assertEqual((body["name"], body["url"], body["host"]),
+                         ("Imbul Awards", "https://imbulawards.yagi.hu", "imbulawards.yagi.hu"))
+
+    def test_members_get_in_by_themselves_from_the_opening(self):
+        self.guild_members = {FRIEND}
+        self.app.ballot.opens_at = server.datetime(2099, 1, 1, tzinfo=server.timezone.utc)
+        self.assertIsNone(self.login(FRIEND)[0])
+        self.open_now()
+        friend, _ = self.login(FRIEND, scope="identify guilds")
+        self.assertIsNotNone(friend)
+        self.assertIsNone(self.login(STRANGER, scope="identify guilds")[0])  # not on the server
+        admin, _ = self.login(ADMIN, scope="identify guilds")
+        _, access = self.request("GET", "/api/admin/access", cookie=admin)
+        self.assertTrue(access["everyone"])
+        self.assertTrue(access["everyoneAuto"])
+
+    def test_the_admins_choice_wins_over_the_opening(self):
+        self.guild_members = {FRIEND}
+        admin, _ = self.login(ADMIN)
+        self.request("POST", "/api/admin/access/everyone", body={"allowed": False}, cookie=admin)
+        self.open_now()
+        self.assertIsNone(self.login(FRIEND)[0])  # "nobody but the admins" stays so
+        _, access = self.request("GET", "/api/admin/access", cookie=admin)
+        self.assertFalse(access["everyone"])
+        self.assertFalse(access["everyoneAuto"])
+
+    def test_opening_is_before_the_deadline(self):
+        ballot = server.Ballot()
+        self.assertLess(ballot.opens_at, ballot.closes_at)
+        self.assertEqual(ballot.opens_at.isoformat(), "2026-12-01T10:00:00+01:00")
 
 
 class DijazottakTests(ServerTest):
