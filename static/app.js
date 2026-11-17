@@ -201,16 +201,34 @@ function showPage(direction) {
     return;
   }
   ballotUi.animating = true;
+  // The glow of a just completed page would override the slide-out (and its end would never come)
+  old.classList.remove("just-completed");
   old.classList.add(`leave-${direction}`);
-  old.addEventListener("animationend", () => {
+  afterAnimation(old, `leave-${direction}`, 400, () => {
     page.classList.add(`enter-${direction}`);
     stage.replaceChildren(page);
-    page.addEventListener("animationend", () => {
+    window.scrollTo({ top: Math.min(window.scrollY, $("ballot-view").offsetTop - 16), behavior: "smooth" });
+    afterAnimation(page, `enter-${direction}`, 600, () => {
       page.classList.remove(`enter-${direction}`);
       ballotUi.animating = false;
-    }, { once: true });
-    window.scrollTo({ top: Math.min(window.scrollY, $("ballot-view").offsetTop - 16), behavior: "smooth" });
-  }, { once: true });
+    });
+  });
+}
+
+// Runs `then` once, when the element's `name` animation ends, or after `fallbackMs` at the latest (a hidden tab or
+// an animation that never started would otherwise leave the ballot stuck between two pages)
+function afterAnimation(element, name, fallbackMs, then) {
+  let finished = false;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    clearTimeout(timer);
+    element.removeEventListener("animationend", onEnd);
+    then();
+  };
+  const onEnd = (event) => { if (event.target === element && event.animationName === name) finish(); };
+  const timer = setTimeout(finish, fallbackMs);
+  element.addEventListener("animationend", onEnd);
 }
 
 function cancelAdvance() {
