@@ -30,19 +30,25 @@
     <p>Végre nem csak a szád jár, hanem eljöttél leadni a szavazatodat. Vedd ki a részed te is a szavazásból, és
       engedd, hogy számítson a véleményed!</p>
     <!-- Same moment as votingClosesAt in nominees.json (tests/test_server.py checks they agree) -->
-    <p class="deadline-note">Szavazni <b>2026. december 9-én 23:59-ig</b> tudsz. Addig bármikor visszajöhetsz, és
+    <p class="deadline-note" id="deadline-note">Szavazni <b>2026. december 9-én 23:59-ig</b> tudsz. Addig bármikor visszajöhetsz, és
       módosíthatod a leadott szavazataidat.</p>
     <p id="login-error" class="notice" role="alert" hidden></p>
     <a class="button discord" href="login">Belépés Discorddal</a>
   </section>
 
   <nav id="tabs" class="tabs" hidden>
-    <button type="button" data-tab="ballot" aria-pressed="true">🗳️ Szavazás</button>
+    <button type="button" data-tab="ballot" aria-pressed="true" id="ballot-tab">🗳️ Szavazás</button>
     <button type="button" data-tab="admin" aria-pressed="false" id="admin-tab" hidden>📊 Admin</button>
   </nav>
 
   <!-- The ballot: one category per page -->
   <section id="ballot-view" hidden>
+    <!-- After the deadline: the Díjazottak page -->
+    <div id="results-banner" class="results-banner" hidden>
+      <h2>🏆 Díjazottak</h2>
+      <p>A szavazás lezárult. A díjazottakat folyamatosan, a The Game Awards gála ideje alatt, a műsorral párhuzamosan
+        tesszük közzé.</p>
+    </div>
     <div class="ballot-bar">
       <button type="button" class="arrow" id="prev" aria-label="Előző kategória">‹</button>
       <div class="ballot-status">
@@ -63,6 +69,7 @@
       <button type="button" data-sub="totals" aria-pressed="true">Összesítés</button>
       <button type="button" data-sub="voters" aria-pressed="false">Ki mire szavazott</button>
       <button type="button" data-sub="scores" aria-pressed="false">Tippverseny</button>
+      <button type="button" data-sub="dijazottak" aria-pressed="false">Díjazottak</button>
       <button type="button" data-sub="access" aria-pressed="false">Hozzáférés</button>
     </nav>
     <p id="admin-error" class="error" role="alert"></p>
@@ -92,6 +99,14 @@
         <h2>Ki tippelt a legjobban?</h2>
         <p id="scores-note" class="muted small-text"></p>
         <ol id="scores" class="scores"></ol>
+      </div>
+    </div>
+
+    <div data-panel="dijazottak" hidden>
+      <div class="panel">
+        <h2>Díjazottak közzététele</h2>
+        <p id="reveal-note" class="muted small-text"></p>
+        <div class="table-wrap"><table id="reveal-table" class="reveal-table"></table></div>
       </div>
     </div>
 

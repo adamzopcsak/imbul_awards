@@ -18,6 +18,21 @@ unanswered category slides in by itself; after the last one comes a summary of a
 by hand. Votes can be changed until the deadline in `nominees.json` (`votingClosesAt`), after which the ballot is
 read-only.
 
+## Díjazottak (after the deadline)
+
+Once `votingClosesAt` has passed, nobody can vote any more (the server refuses it), and the ballot turns into the
+**Díjazottak** page: the same pages, one category each, every nominee in black and white, with a note that the
+winners are published during The Game Awards show, in step with it. Each voter's own choices are marked ("a te
+tipped", "a te szavazatod").
+
+On **Admin → Díjazottak** every category has a **Mutatás mindenkinek** button: then, in both questions, the nominee
+with the most votes ("Ötletem sincs" never counts; all of them on a tie) turns colour, gets a gold frame and a
+"🏆 Díjazott" badge, and the category's dot turns gold. **Elrejtés** takes it back. Open pages check every 20
+seconds and light up a category as soon as it is shown. The welcome page says that voting is closed.
+
+To try it locally: `python server.py --port 8006 --data data --dev-login --closes-at 2026-11-01T00:00:00+01:00`
+(`--closes-at` works only with `--dev-login`).
+
 ## Who can get in
 
 Login is with Discord (OAuth2, `identify` scope only). Only these people get in:

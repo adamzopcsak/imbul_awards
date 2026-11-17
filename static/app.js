@@ -72,6 +72,19 @@ const AUTO_ADVANCE_MS = 750;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
 const ballotUi = { index: 0, done: false, advanceTimer: null, animating: false };
 
+// After the deadline the ballot turns into "Díjazottak": the same pages, nobody can vote, every card is black and
+// white; in a category the admin has shown, the most voted nominees (per question) are in colour.
+const RESULTS_POLL_MS = 20_000;
+const RESULT_QUESTIONS = { predict: "🔮 Szerintetek ki fogja megkapni a díjat?", pick: "❤️ Ti kinek adnátok a díjat?" };
+
+function resultsMode() {
+  return Boolean(state.ballot && state.ballot.closed);
+}
+
+function resultOf(category) {
+  return (state.ballot.results || {})[category.id] || null;
+}
+
 function voteCount() {
   return Object.values(state.votes).reduce((sum, kinds) => sum + Object.keys(kinds).length, 0);
 }
@@ -100,17 +113,22 @@ function renderDeadline() {
 
 function renderNav() {
   const categories = state.ballot.categories;
-  const done = categories.filter(isComplete).length;
+  const results = resultsMode();
+  // Gold dot: a category done (voting), or its result shown (Díjazottak)
+  const isDone = (category) => (results ? Boolean(resultOf(category)) : isComplete(category));
+  const done = categories.filter(isDone).length;
   $("step").textContent = ballotUi.done ? "Összegzés" : `${ballotUi.index + 1} / ${categories.length}`;
-  $("done-count").textContent = `${done} / ${categories.length} kategória kész`;
+  $("done-count").textContent = results
+    ? `${done} / ${categories.length} kategória díjazottja kint`
+    : `${done} / ${categories.length} kategória kész`;
   $("progress-bar").style.width = `${(done / categories.length) * 100}%`;
   $("prev").disabled = !ballotUi.done && ballotUi.index === 0;
   $("next").disabled = ballotUi.done;
   $("dots").replaceChildren(...categories.map((category, index) => h("button", {
     type: "button",
-    class: `dot${isComplete(category) ? " complete" : ""}${!ballotUi.done && index === ballotUi.index ? " current" : ""}`,
+    class: `dot${isDone(category) ? " complete" : ""}${!ballotUi.done && index === ballotUi.index ? " current" : ""}`,
     title: `${index + 1}. ${category.name}`,
-    "aria-label": `${index + 1}. ${category.name}${isComplete(category) ? " (kész)" : ""}`,
+    "aria-label": `${index + 1}. ${category.name}${isDone(category) ? (results ? " (díjazott kint)" : " (kész)") : ""}`,
     onclick: () => goTo(index),
   })));
 }
@@ -146,7 +164,42 @@ function nomineeCard(category, kind, index, nominee) {
     nominee.detail ? h("span", { class: "card-detail" }, nominee.detail) : null));
 }
 
+function resultCard(category, kind, index, nominee) {
+  const result = resultOf(category);
+  const winner = Boolean(result && result[kind].winners.includes(index));
+  const mine = state.votes[category.id] && state.votes[category.id][kind] === index;
+  return h("div", { class: `card result${winner ? " winner" : ""}${mine ? " mine" : ""}`, "data-kind": kind },
+    artEl(nominee, index),
+    winner ? h("span", { class: "ribbon" }, "🏆 Díjazott") : null,
+    h("span", { class: "card-text" }, h("span", { class: "card-name" }, nominee.name),
+      nominee.detail ? h("span", { class: "card-detail" }, nominee.detail) : null,
+      mine ? h("span", { class: "mine-tag" }, kind === "predict" ? "a te tipped" : "a te szavazatod") : null));
+}
+
+function resultsPage(index) {
+  const category = state.ballot.categories[index];
+  const result = resultOf(category);
+  const myNoIdea = (kind) => (state.votes[category.id] || {})[kind] === NO_IDEA;
+  return h("article", { class: `page results${result ? " revealed" : ""}`, "data-category": category.id },
+    h("header", { class: "page-head" },
+      h("span", { class: "eyebrow" }, `${index + 1}. kategória · ${category.original}`),
+      h("h2", {}, category.name)),
+    ...["predict", "pick"].map((kind) => h("section", { class: `question ${kind}` },
+      h("h3", {}, RESULT_QUESTIONS[kind],
+        result && result[kind].votes
+          ? h("span", { class: "result-votes" }, ` · ${result[kind].votes} szavazattal${result[kind].winners.length > 1 ? ", holtverseny" : ""}`)
+          : null),
+      h("div", { class: "cards", style: `--count: ${category.nominees.length}` },
+        ...category.nominees.map((nominee, i) => resultCard(category, kind, i, nominee))),
+      myNoIdea(kind) ? h("p", { class: "muted small-text" }, "Itt azt választottad: 🤷 Ötletem sincs, ember") : null,
+      result && !result[kind].winners.length ? h("p", { class: "muted small-text" }, "Erre senki nem szavazott.") : null)),
+    h("p", { class: "page-hint" }, result
+      ? "🏆 Kint a díjazott: színes, arany keretben."
+      : "A díjazott a gála alatt derül ki: amint kint van, itt színesben látod."));
+}
+
 function categoryPage(index) {
+  if (resultsMode()) return resultsPage(index);
   const category = state.ballot.categories[index];
   return h("article", { class: `page${isComplete(category) ? " complete" : ""}`, "data-category": category.id },
     h("header", { class: "page-head" },
@@ -163,7 +216,29 @@ function categoryPage(index) {
       : "Válassz mindkét kérdésnél, és jön a következő kategória."));
 }
 
+function resultsSummaryPage() {
+  const categories = state.ballot.categories;
+  const shown = categories.filter(resultOf).length;
+  const names = (category, kind) => {
+    const result = resultOf(category);
+    if (!result) return h("td", { class: "muted" }, "még nincs kint");
+    if (!result[kind].winners.length) return h("td", { class: "muted" }, "–");
+    return h("td", { class: kind }, result[kind].winners.map((i) => nomineeName(category, i)).join(", "));
+  };
+  const rows = categories.map((category, index) => h("tr", {}, h("th", { scope: "row" },
+    h("button", { type: "button", class: "link-button", onclick: () => goTo(index) }, category.name)),
+  names(category, "predict"), names(category, "pick")));
+  return h("article", { class: "page done-page" },
+    h("div", { class: "celebrate", "aria-hidden": "true" }, "🏆"),
+    h("h2", {}, shown === categories.length ? "Minden díjazott kint van!" : `${shown} / ${categories.length} díjazott kint`),
+    h("p", { class: "muted" }, "Kattints egy kategóriára a részletekért."),
+    h("div", { class: "table-wrap" }, h("table", { class: "detail-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Kategória"), h("th", {}, "🔮 Szerintetek nyer"), h("th", {}, "❤️ Ti ennek adnátok"))),
+      h("tbody", {}, ...rows))));
+}
+
 function donePage() {
+  if (resultsMode()) return resultsSummaryPage();
   const categories = state.ballot.categories;
   const open = categories.filter((c) => !isComplete(c)).length;
   const rows = categories.map((category, index) => {
@@ -291,11 +366,40 @@ function refreshPage() {
 
 function renderBallot() {
   renderDeadline();
+  const results = resultsMode();
+  $("results-banner").hidden = !results;
+  $("ballot-tab").textContent = results ? "🏆 Díjazottak" : "🗳️ Szavazás";
   const fromHash = state.ballot.categories.findIndex((c) => `#${c.id}` === location.hash);
-  const open = firstOpenIndex(0);
+  const open = results ? 0 : firstOpenIndex(0);
   ballotUi.done = fromHash === -1 && (location.hash === "#kesz" || open === -1);
   ballotUi.index = fromHash !== -1 ? fromHash : Math.max(open, 0);
   showPage(null);
+  if (results) watchResults();
+}
+
+// During the show the admin reveals the categories one by one: open pages check every RESULTS_POLL_MS (and when the
+// tab comes back into view), and a newly shown category lights up
+let resultsTimer = null;
+
+function watchResults() {
+  if (resultsTimer) return;
+  const check = async () => {
+    if (document.hidden || !resultsMode()) return;
+    try {
+      const ballot = await api("api/ballot");
+      const before = state.ballot.results || {};
+      if (JSON.stringify(ballot.results) === JSON.stringify(before)) return;
+      state.ballot.results = ballot.results;
+      const current = !ballotUi.done && state.ballot.categories[ballotUi.index];
+      const fresh = current && ballot.results[current.id] && !before[current.id];
+      if (!ballotUi.animating) refreshPage();
+      if (fresh) $("stage").firstElementChild.classList.add("just-revealed");
+    } catch (error) {
+      // Offline or logged out: try again next time
+    }
+  };
+  resultsTimer = setInterval(check, RESULTS_POLL_MS);
+  document.addEventListener("visibilitychange", check);
 }
 
 async function vote(categoryId, kind, nominee) {
@@ -505,10 +609,61 @@ async function setEveryone(allowed) {
   }
 }
 
+// Díjazottak: each category's most voted nominees (per question), shown to everyone or hidden again
+function topNames(category, counts) {
+  const top = Math.max(0, ...counts);
+  if (!top) return { text: "nincs szavazat", votes: 0 };
+  const names = counts.map((c, i) => (c === top ? nomineeName(category, i) : null)).filter(Boolean);
+  return { text: names.join(", "), votes: top };
+}
+
+function renderReveal() {
+  const { totals, revealed, closed } = state.summary;
+  const shown = new Set(revealed);
+  const when = dateTime.format(new Date(state.ballot.closesAt));
+  $("reveal-note").textContent = closed
+    ? `${shown.size} / ${state.ballot.categories.length} kategória díjazottja látszik mindenkinek. A szavazók oldala 20 másodpercen belül magától frissül.`
+    : `A szavazás még tart (${when}-ig): addig a szavazók semmit nem látnak ebből, a megjelölt kategóriák a határidő után jelennek meg.`;
+  const cell = (category, kind) => {
+    const top = topNames(category, totals[category.id][kind]);
+    return h("td", { class: top.votes ? kind : "muted" }, top.text, top.votes ? h("small", { class: "muted" }, ` (${top.votes})`) : null);
+  };
+  const rows = state.ballot.categories.map((category) => {
+    const isShown = shown.has(category.id);
+    return h("tr", { class: isShown ? "shown" : "" },
+      h("th", { scope: "row" }, category.name),
+      cell(category, "predict"), cell(category, "pick"),
+      h("td", { class: "reveal-action" }, h("button", {
+        type: "button",
+        class: isShown ? "small secondary" : "small",
+        onclick: () => setRevealed(category.id, !isShown),
+      }, isShown ? "Elrejtés" : "Mutatás mindenkinek")));
+  });
+  $("reveal-table").replaceChildren(
+    h("thead", {}, h("tr", {}, h("th", {}, "Kategória"), h("th", {}, "🔮 Tipp díjazottja"), h("th", {}, "❤️ Kedvenc díjazottja"), h("th", {}, ""))),
+    h("tbody", {}, ...rows));
+}
+
+async function setRevealed(category, shown) {
+  $("admin-error").textContent = "";
+  try {
+    state.summary = await api("api/admin/reveal", { method: "PUT", body: { category, shown } });
+    renderAdmin();
+    // The admin's own Díjazottak pages follow at once
+    if (resultsMode()) {
+      state.ballot.results = state.summary.results;
+      if (!ballotUi.animating) refreshPage();
+    }
+  } catch (error) {
+    $("admin-error").textContent = error.message;
+  }
+}
+
 function renderAdmin() {
   renderTotals();
   renderVoters();
   renderScores();
+  renderReveal();
 }
 
 async function loadAdmin() {
@@ -570,6 +725,11 @@ function showLogin() {
     $("login-error").hidden = false;
   }
   $("login-view").hidden = false;
+  // After the deadline the welcome page leads to the Díjazottak instead
+  api("api/status").then(({ closed }) => {
+    if (!closed) return;
+    $("deadline-note").textContent = "A szavazás lezárult. Lépj be, és nézd meg a díjazottakat: a gála alatt folyamatosan kerülnek fel.";
+  }).catch(() => null);
 }
 
 async function start() {

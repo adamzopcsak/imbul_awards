@@ -11,6 +11,7 @@ Paths:
   GET    /login                     off to Discord's login
   GET    /auth/callback             back from Discord
   POST   /logout                    log out
+  GET    /api/status                whether voting is closed (public, for the welcome page)
   GET    /api/me                    who is logged in (401 if nobody, 403 if they may not vote)
   GET    /api/ballot                the categories, the nominees and my votes
   PUT    /api/votes                 {"category", "kind": "predict" | "pick", "nominee": index, -1 or null}
@@ -18,6 +19,8 @@ Paths:
 Admin only:
   GET    /api/admin/summary         every vote, the totals, the winners and the guessing leaderboard
   PUT    /api/admin/winners         {"category", "nominee": index or null}: the real winner
+  PUT    /api/admin/reveal          {"category", "shown": true | false}: show the server's result in that category
+                                    to everyone (after the deadline), or hide it again
   GET    /api/admin/access          who may vote, and who tried to log in without access
   POST   /api/admin/access          {"userId", "allowed": true | false}: let in / give back, or take away
   POST   /api/admin/access/everyone {"allowed": true}: every member of the Discord server gets in at their login;
@@ -133,6 +136,11 @@ CREATE TABLE IF NOT EXISTS votes (
     nominee    INTEGER NOT NULL,
     at         TEXT NOT NULL,
     PRIMARY KEY (user_id, category, kind)
+);
+-- Categories whose result (the most voted nominees) the admin has shown to everyone
+CREATE TABLE IF NOT EXISTS revealed (
+    category   TEXT PRIMARY KEY,
+    at         TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS winners (
     category   TEXT PRIMARY KEY,
@@ -351,6 +359,15 @@ class Store:
                          "ON CONFLICT(user_id, category, kind) DO UPDATE SET nominee = excluded.nominee, at = excluded.at",
                          (user_id, category, kind, nominee, now_iso())))
 
+    def revealed(self):
+        return {row["category"]: row["at"] for row in self._read("SELECT * FROM revealed")}
+
+    def set_revealed(self, category, shown):
+        if shown:
+            self._write(("INSERT OR IGNORE INTO revealed (category, at) VALUES (?, ?)", (category, now_iso())))
+        else:
+            self._write(("DELETE FROM revealed WHERE category = ?", (category,)))
+
     def winners(self):
         return {row["category"]: row["nominee"] for row in self._read("SELECT category, nominee FROM winners")}
 
@@ -476,14 +493,34 @@ class App:
             scores.append({**self.person(uid, users), "correct": len(guessed), "agreed": len(agreed),
                            "predicted": predicted})
         scores.sort(key=lambda s: (-s["correct"], -s["agreed"], s["name"].lower()))
-        return {
+        summary = {
             "voters": [{**self.person(uid, users), "votes": by_user[uid],
                         "count": sum(len(kinds) for kinds in by_user[uid].values())} for uid in voters],
             "totals": totals,
             "winners": winners,
             "scores": scores,
             "decided": len(winners),
+            "revealed": sorted(self.store.revealed()),
+            "closed": self.ballot.closed(),
         }
+        summary["results"] = self.results(totals)
+        return summary
+
+    def results(self, totals=None):
+        """The server's result in every category the admin has shown: per question, the nominees with the most votes
+        (all of them on a tie; "Ötletem sincs" never wins, and nobody wins without a vote)."""
+        if totals is None:
+            totals = self.summary()["totals"]
+        results = {}
+        for category in self.store.revealed():
+            if category not in totals:
+                continue
+            results[category] = {}
+            for kind in KINDS:
+                counts = totals[category][kind]
+                top = max(counts, default=0)
+                results[category][kind] = {"winners": [i for i, c in enumerate(counts) if top and c == top], "votes": top}
+        return results
 
     def access_list(self):
         """For the admin page, as on Imbul Stats: everyone who may vote or had access taken away (the most recent
@@ -638,6 +675,7 @@ class Handler(BaseHTTPRequestHandler):
             PREFIX + "/login": self._login,
             PREFIX + "/auth/callback": self._callback,
             PREFIX + "/dev-login": self._dev_login,
+            PREFIX + "/api/status": self._status,
             PREFIX + "/api/me": self._me,
             PREFIX + "/api/ballot": self._ballot,
             PREFIX + "/api/admin/summary": self._summary,
@@ -713,11 +751,17 @@ class Handler(BaseHTTPRequestHandler):
         self.app.store.touch(user_id)  # "Utoljára" on the admin page's access list
         self._json(HTTPStatus.OK, {**self.app.person(user_id), "isAdmin": self.app.is_admin(user_id)})
 
+    def _status(self):
+        self._json(HTTPStatus.OK, {"closed": self.app.ballot.closed(), "closesAt": self.app.ballot.public()["closesAt"]})
+
     def _ballot(self):
         user_id = self._voter()
         if user_id is None:
             return
-        self._json(HTTPStatus.OK, {**self.app.ballot.public(), "votes": self.app.store.votes_of(user_id)})
+        ballot = self.app.ballot.public()
+        # After the deadline: the results of the categories the admin has shown (nothing else about the votes)
+        results = self.app.results() if ballot["closed"] else {}
+        self._json(HTTPStatus.OK, {**ballot, "votes": self.app.store.votes_of(user_id), "results": results})
 
     def _summary(self):
         if self._admin() is not None:
@@ -751,6 +795,8 @@ class Handler(BaseHTTPRequestHandler):
         path = self._path()
         if path == PREFIX + "/api/votes":
             return self._write(self._vote)
+        if path == PREFIX + "/api/admin/reveal":
+            return self._write(self._set_revealed)
         if path == PREFIX + "/api/admin/winners":
             return self._write(self._set_winner)
         self._error(HTTPStatus.NOT_FOUND, "Nincs ilyen oldal.")
@@ -770,6 +816,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(HTTPStatus.CONFLICT, "A szavazás lezárult.")
         self.app.store.vote(user_id, body["category"], body["kind"], body.get("nominee"))
         self._json(HTTPStatus.OK, {"votes": self.app.store.votes_of(user_id)})
+
+    def _set_revealed(self):
+        if self._admin() is None:
+            return
+        body = self._body()
+        self.app.ballot.check(body.get("category"), None)
+        if not isinstance(body.get("shown"), bool):
+            raise ValidationError("shown: true vagy false")
+        self.app.store.set_revealed(body["category"], body["shown"])
+        self._json(HTTPStatus.OK, self.app.summary())
 
     def _set_winner(self):
         if self._admin() is None:
@@ -824,9 +880,15 @@ def main():
     parser.add_argument("--port", type=int, default=8006)
     parser.add_argument("--data", default=str(APP_DIR / "data"), help="folder of awards.db")
     parser.add_argument("--dev-login", action="store_true", help="local testing without Discord (never on https)")
+    parser.add_argument("--closes-at", help="local testing with --dev-login: another voting deadline, e.g. "
+                                            "2026-11-01T00:00:00+01:00 to see the Díjazottak page")
     args = parser.parse_args()
     config = Config(dev_login=args.dev_login)
     app = App(config, args.data)
+    if args.closes_at:
+        if not config.dev_login:
+            parser.error("--closes-at only works with --dev-login, on plain http")
+        app.ballot.closes_at = datetime.fromisoformat(args.closes_at)
     server = make_server(args.host, args.port, app)
     if not config.admins:
         print("Warning: AWARDS_ADMIN_USERS is empty, nobody can log in.", flush=True)

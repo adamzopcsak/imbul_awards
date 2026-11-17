@@ -101,7 +101,8 @@ button.small { padding: .3rem .7rem; font-size: .85rem; }
 .arrow:disabled { opacity: .3; }
 .ballot-status { flex: 1; min-width: 0; display: grid; gap: 6px; }
 .status-line { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; font-size: .9rem; }
-.status-line b { font-variant-numeric: tabular-nums; }
+.status-line b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.status-line span { text-align: right; }
 .bar { height: 4px; border-radius: 2px; background: var(--input); overflow: hidden; }
 .bar div { height: 100%; background: var(--accent); transition: width .4s ease; }
 .dots { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -390,3 +391,71 @@ button.revoke:hover { color: var(--red); border-color: var(--red); filter: none;
   font-size: .92rem;
 }
 .deadline-note b { color: var(--accent); }
+
+/* Díjazottak (after the deadline): black and white cards, the shown winners in colour */
+.results-banner {
+  text-align: center;
+  margin-bottom: 16px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--accent) 14%, var(--tile)), var(--tile));
+}
+.results-banner h2 { font-size: 1.5rem; margin-bottom: 6px; }
+.results-banner p { color: var(--muted); line-height: 1.5; max-width: 640px; margin: 0 auto; }
+.page.results .card { cursor: default; }
+.page.results .card .art { filter: grayscale(1) brightness(.75); transition: filter .6s ease; }
+.page.results .card .card-name { color: var(--muted); }
+.page.results .card.winner {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 16%, var(--input));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 10px 30px color-mix(in srgb, var(--accent) 25%, transparent);
+  transform: translateY(-4px) scale(1.04);
+  z-index: 1;
+}
+.page.results .card.winner .art { filter: none; }
+.page.results .card.winner .card-name { color: var(--fg); }
+.card .ribbon {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--on-accent);
+  font-size: .72rem;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgb(0 0 0 / .4);
+}
+.mine-tag {
+  align-self: flex-start;
+  margin-top: 4px;
+  padding: .05rem .4rem;
+  border-radius: 999px;
+  font-size: .68rem;
+  font-weight: 700;
+  color: var(--kind);
+  border: 1px solid color-mix(in srgb, var(--kind) 60%, transparent);
+}
+.result-votes { color: var(--muted); font-weight: 500; font-size: .85rem; }
+.page.just-revealed .card.winner { animation: reveal-winner 1.1s cubic-bezier(.2, .8, .2, 1); }
+.page.just-revealed .card.winner .art { animation: reveal-colour 1.4s ease-out; }
+@keyframes reveal-winner {
+  0% { transform: none; box-shadow: none; }
+  45% { transform: translateY(-8px) scale(1.1); }
+}
+@keyframes reveal-colour { from { filter: grayscale(1) brightness(.75); } }
+@media (prefers-reduced-motion: reduce) {
+  .page.just-revealed .card.winner, .page.just-revealed .card.winner .art { animation: none; }
+  .page.results .card .art { transition: none; }
+}
+
+/* Admin → Díjazottak */
+.reveal-table td, .reveal-table th { vertical-align: middle; }
+.reveal-table td.predict { color: color-mix(in srgb, var(--predict) 70%, var(--fg)); }
+.reveal-table td.pick { color: color-mix(in srgb, var(--pick) 70%, var(--fg)); }
+.reveal-table tr.shown th::before { content: "🏆 "; }
+.reveal-table tr.shown { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.reveal-action { text-align: right; white-space: nowrap; }

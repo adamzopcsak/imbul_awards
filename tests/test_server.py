@@ -397,6 +397,80 @@ class ClosedVoteTests(ServerTest):
         self.assertEqual(response.status, 200)
 
 
+class DijazottakTests(ServerTest):
+    """After the deadline: the admin shows each category's result ("Díjazottak") to everyone, or hides it again."""
+
+    def setUp(self):
+        super().setUp()
+        self.admin, _ = self.login(ADMIN, "Yagi")
+        for user_id in (FRIEND, STRANGER):
+            self.request("POST", "/api/admin/access", body={"userId": user_id, "allowed": True}, cookie=self.admin)
+        self.friend, _ = self.login(FRIEND, "Haver")
+        self.other, _ = self.login(STRANGER, "Harmadik")
+        votes = {self.admin: (2, 0), self.friend: (2, 1), self.other: (0, server.NO_IDEA)}
+        for cookie, (predict, pick) in votes.items():
+            for kind, nominee in (("predict", predict), ("pick", pick)):
+                self.request("PUT", "/api/votes", body={"category": "goty", "kind": kind, "nominee": nominee},
+                             cookie=cookie)
+        self.request("PUT", "/api/votes", body={"category": "rpg", "kind": "pick", "nominee": 3}, cookie=self.friend)
+
+    def close(self):
+        self.app.ballot.closes_at = server.datetime(2020, 1, 1, tzinfo=server.timezone.utc)
+
+    def reveal(self, category, shown=True, cookie=None):
+        return self.request("PUT", "/api/admin/reveal", body={"category": category, "shown": shown},
+                            cookie=cookie or self.admin)
+
+    def test_nothing_before_the_deadline_even_if_shown(self):
+        self.reveal("goty")
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["results"], {})
+
+    def test_nothing_until_the_admin_shows_it(self):
+        self.close()
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["results"], {})
+
+    def test_shown_category_has_the_most_voted_in_both_questions(self):
+        self.close()
+        response, summary = self.reveal("goty")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(summary["revealed"], ["goty"])
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.other)
+        self.assertEqual(ballot["results"], {"goty": {"predict": {"winners": [2], "votes": 2},
+                                                      "pick": {"winners": [0, 1], "votes": 1}}})  # a tie: both
+        # Hidden again
+        self.reveal("goty", False)
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.other)
+        self.assertEqual(ballot["results"], {})
+
+    def test_no_idea_never_wins_and_no_votes_means_no_winner(self):
+        self.close()
+        self.reveal("rpg")
+        self.reveal("action")
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["results"]["rpg"], {"predict": {"winners": [], "votes": 0},
+                                                    "pick": {"winners": [3], "votes": 1}})
+        self.assertEqual(ballot["results"]["action"]["pick"], {"winners": [], "votes": 0})
+
+    def test_only_the_admin_shows_or_hides(self):
+        response, _ = self.reveal("goty", cookie=self.friend)
+        self.assertEqual(response.status, 403)
+        response, _ = self.reveal("nope")
+        self.assertEqual(response.status, 400)
+        response, _ = self.request("PUT", "/api/admin/reveal", body={"category": "goty", "shown": "yes"},
+                                   cookie=self.admin)
+        self.assertEqual(response.status, 400)
+
+    def test_status_is_public(self):
+        response, status = self.request("GET", "/api/status")
+        self.assertEqual(response.status, 200)
+        self.assertFalse(status["closed"])
+        self.close()
+        _, status = self.request("GET", "/api/status")
+        self.assertTrue(status["closed"])
+
+
 class ImageTests(unittest.TestCase):
     def test_only_wikimedia_pictures_are_passed_on(self):
         with tempfile.TemporaryDirectory() as folder:
