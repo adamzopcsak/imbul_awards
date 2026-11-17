@@ -168,7 +168,7 @@ button.small { padding: .3rem .7rem; font-size: .85rem; }
 .card:hover:not(:disabled) { border-color: var(--kind); transform: translateY(-2px); filter: none; }
 .card:disabled { cursor: default; }
 .card:disabled:not([aria-pressed="true"]) { opacity: .5; }
-.card .art { display: block; aspect-ratio: 3 / 4; background: var(--border); overflow: hidden; }
+.card .art { position: relative; display: block; aspect-ratio: 3 / 4; background: var(--border); overflow: hidden; }
 .card .art img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s ease; }
 .card:hover:not(:disabled) .art img { transform: scale(1.04); }
 .card .art.logo { background: #e8ecf5; padding: 14%; }
@@ -459,3 +459,40 @@ button.revoke:hover { color: var(--red); border-color: var(--red); filter: none;
 .reveal-table tr.shown th::before { content: "🏆 "; }
 .reveal-table tr.shown { background: color-mix(in srgb, var(--accent) 8%, transparent); }
 .reveal-action { text-align: right; white-space: nowrap; }
+
+/* The real winner at The Game Awards: teal, set apart from the Imbul result (gold) */
+:root { --real: #4fd1c5; }
+.page.results .card.real { border-color: var(--real); }
+.page.results .card.real .art { filter: none; }
+.page.results .card.real .card-name { color: var(--fg); }
+.page.results .card.real:not(.winner) {
+  background: color-mix(in srgb, var(--real) 14%, var(--input));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--real) 35%, transparent), 0 10px 30px color-mix(in srgb, var(--real) 22%, transparent);
+  transform: translateY(-4px) scale(1.04);
+}
+/* Both at once: gold frame, teal ring inside it */
+.page.results .card.winner.real {
+  box-shadow: inset 0 0 0 3px var(--real), 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent), 0 10px 30px color-mix(in srgb, var(--accent) 25%, transparent);
+}
+.card .real-badge {
+  position: absolute;
+  left: 50%;
+  bottom: 8px;
+  transform: translateX(-50%);
+  white-space: nowrap;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  background: var(--real);
+  color: #062a27;
+  font-size: .72rem;
+  font-weight: 800;
+  box-shadow: 0 4px 12px rgb(0 0 0 / .4);
+}
+.mine-tag.hit { color: var(--real); border-color: var(--real); }
+.legend { margin-top: 16px; text-align: center; font-size: .8rem; color: var(--muted); line-height: 1.7; }
+.legend-imbul, .legend-real { font-weight: 700; padding: .05rem .45rem; border-radius: 999px; white-space: nowrap; }
+.legend-imbul { background: var(--accent); color: var(--on-accent); }
+.legend-real { background: var(--real); color: #062a27; }
+td.real { color: var(--real); font-weight: 600; }
+.real-select { max-width: 220px; font-size: .85rem; }
+.reveal-table td.has-real .real-select { border-color: var(--real); color: var(--real); }

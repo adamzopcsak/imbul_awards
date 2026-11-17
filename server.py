@@ -13,7 +13,8 @@ Paths:
   POST   /logout                    log out
   GET    /api/status                whether voting is closed (public, for the welcome page)
   GET    /api/me                    who is logged in (401 if nobody, 403 if they may not vote)
-  GET    /api/ballot                the categories, the nominees and my votes
+  GET    /api/ballot                the categories, the nominees and my votes; after the deadline also the shown
+                                    results and the real winners (/api/admin/winners)
   PUT    /api/votes                 {"category", "kind": "predict" | "pick", "nominee": index, -1 or null}
                                     (-1 is "Ötletem sincs, ember", null takes the vote back)
 Admin only:
@@ -761,7 +762,10 @@ class Handler(BaseHTTPRequestHandler):
         ballot = self.app.ballot.public()
         # After the deadline: the results of the categories the admin has shown (nothing else about the votes)
         results = self.app.results() if ballot["closed"] else {}
-        self._json(HTTPStatus.OK, {**ballot, "votes": self.app.store.votes_of(user_id), "results": results})
+        # and who really won at The Game Awards, as the admin marks it during the show
+        actual = self.app.store.winners() if ballot["closed"] else {}
+        self._json(HTTPStatus.OK, {**ballot, "votes": self.app.store.votes_of(user_id), "results": results,
+                                   "actual": actual})
 
     def _summary(self):
         if self._admin() is not None:

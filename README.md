@@ -30,6 +30,15 @@ with the most votes ("Ötletem sincs" never counts; all of them on a tie) turns 
 "🏆 Díjazott" badge, and the category's dot turns gold. **Elrejtés** takes it back. Open pages check every 20
 seconds and light up a category as soon as it is shown. The welcome page says that voting is closed.
 
+The real winners at The Game Awards are set on the same tab, one dropdown per category (**⭐ A gálán nyert**; the
+same as the 🏆 button on Összesítés, and the guessing leaderboard counts from it). After the deadline they show to
+everyone in the "who will win" row, kept apart from the server's own results:
+
+- **⭐ A gálán nyert** (teal frame, badge at the bottom of the picture): the real winner; a voter whose tip it was
+  sees "eltaláltad! 🎯".
+- **🔮 Imbul tippje** / **🏆 Imbul-díj** (gold frame, badge at the top): the most votes in the "who will win" and
+  the "who would you give it to" rows, once shown with Mutatás mindenkinek.
+
 To try it locally: `python server.py --port 8006 --data data --dev-login --closes-at 2026-11-01T00:00:00+01:00`
 (`--closes-at` works only with `--dev-login`).
 

@@ -453,6 +453,15 @@ class DijazottakTests(ServerTest):
                                                     "pick": {"winners": [3], "votes": 1}})
         self.assertEqual(ballot["results"]["action"]["pick"], {"winners": [], "votes": 0})
 
+    def test_real_winners_only_after_the_deadline(self):
+        self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": 4}, cookie=self.admin)
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["actual"], {})
+        self.close()
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["actual"], {"goty": 4})  # shown even if the Imbul result is not
+        self.assertEqual(ballot["results"], {})
+
     def test_only_the_admin_shows_or_hides(self):
         response, _ = self.reveal("goty", cookie=self.friend)
         self.assertEqual(response.status, 403)

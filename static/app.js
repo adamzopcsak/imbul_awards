@@ -85,6 +85,11 @@ function resultOf(category) {
   return (state.ballot.results || {})[category.id] || null;
 }
 
+// Who really won the category at The Game Awards (set by the admin), or undefined
+function actualOf(category) {
+  return (state.ballot.actual || {})[category.id];
+}
+
 function voteCount() {
   return Object.values(state.votes).reduce((sum, kinds) => sum + Object.keys(kinds).length, 0);
 }
@@ -168,12 +173,17 @@ function resultCard(category, kind, index, nominee) {
   const result = resultOf(category);
   const winner = Boolean(result && result[kind].winners.includes(index));
   const mine = state.votes[category.id] && state.votes[category.id][kind] === index;
-  return h("div", { class: `card result${winner ? " winner" : ""}${mine ? " mine" : ""}`, "data-kind": kind },
-    artEl(nominee, index),
-    winner ? h("span", { class: "ribbon" }, "🏆 Díjazott") : null,
+  // The real winner is marked in the "who will win" row, where it settles the tips
+  const real = kind === "predict" && actualOf(category) === index;
+  const mineText = kind === "predict" ? (real ? "a te tipped · eltaláltad! 🎯" : "a te tipped") : "a te szavazatod";
+  const art = artEl(nominee, index);
+  if (real) art.append(h("span", { class: "real-badge" }, "⭐ A gálán nyert"));  // at the bottom of the picture
+  return h("div", { class: `card result${winner ? " winner" : ""}${real ? " real" : ""}${mine ? " mine" : ""}`, "data-kind": kind },
+    art,
+    winner ? h("span", { class: "ribbon" }, kind === "predict" ? "🔮 Imbul tippje" : "🏆 Imbul-díj") : null,
     h("span", { class: "card-text" }, h("span", { class: "card-name" }, nominee.name),
       nominee.detail ? h("span", { class: "card-detail" }, nominee.detail) : null,
-      mine ? h("span", { class: "mine-tag" }, kind === "predict" ? "a te tipped" : "a te szavazatod") : null));
+      mine ? h("span", { class: `mine-tag${real ? " hit" : ""}` }, mineText) : null));
 }
 
 function resultsPage(index) {
@@ -193,9 +203,17 @@ function resultsPage(index) {
         ...category.nominees.map((nominee, i) => resultCard(category, kind, i, nominee))),
       myNoIdea(kind) ? h("p", { class: "muted small-text" }, "Itt azt választottad: 🤷 Ötletem sincs, ember") : null,
       result && !result[kind].winners.length ? h("p", { class: "muted small-text" }, "Erre senki nem szavazott.") : null)),
+    legend(),
     h("p", { class: "page-hint" }, result
-      ? "🏆 Kint a díjazott: színes, arany keretben."
-      : "A díjazott a gála alatt derül ki: amint kint van, itt színesben látod."));
+      ? "Kint az Imbul eredménye: színes, arany keretben."
+      : "Az Imbul eredménye a gála alatt derül ki: amint kint van, itt színesben látod."));
+}
+
+function legend() {
+  return h("p", { class: "legend" },
+    h("span", { class: "legend-real" }, "⭐ A gálán nyert"), " a The Game Awards valódi díjazottja · ",
+    h("span", { class: "legend-imbul" }, "🔮 Imbul tippje"), " erre tippeltetek a legtöbben · ",
+    h("span", { class: "legend-imbul" }, "🏆 Imbul-díj"), " ti ennek adtátok a legtöbben");
 }
 
 function categoryPage(index) {
@@ -225,15 +243,18 @@ function resultsSummaryPage() {
     if (!result[kind].winners.length) return h("td", { class: "muted" }, "–");
     return h("td", { class: kind }, result[kind].winners.map((i) => nomineeName(category, i)).join(", "));
   };
+  const real = (category) => (actualOf(category) === undefined
+    ? h("td", { class: "muted" }, "még nincs kint")
+    : h("td", { class: "real" }, `⭐ ${nomineeName(category, actualOf(category))}`));
   const rows = categories.map((category, index) => h("tr", {}, h("th", { scope: "row" },
     h("button", { type: "button", class: "link-button", onclick: () => goTo(index) }, category.name)),
-  names(category, "predict"), names(category, "pick")));
+  real(category), names(category, "predict"), names(category, "pick")));
   return h("article", { class: "page done-page" },
     h("div", { class: "celebrate", "aria-hidden": "true" }, "🏆"),
     h("h2", {}, shown === categories.length ? "Minden díjazott kint van!" : `${shown} / ${categories.length} díjazott kint`),
     h("p", { class: "muted" }, "Kattints egy kategóriára a részletekért."),
     h("div", { class: "table-wrap" }, h("table", { class: "detail-table" },
-      h("thead", {}, h("tr", {}, h("th", {}, "Kategória"), h("th", {}, "🔮 Szerintetek nyer"), h("th", {}, "❤️ Ti ennek adnátok"))),
+      h("thead", {}, h("tr", {}, h("th", {}, "Kategória"), h("th", {}, "⭐ A gálán nyert"), h("th", {}, "🔮 Imbul tippje"), h("th", {}, "🏆 Imbul-díj"))),
       h("tbody", {}, ...rows))));
 }
 
@@ -388,8 +409,10 @@ function watchResults() {
     try {
       const ballot = await api("api/ballot");
       const before = state.ballot.results || {};
-      if (JSON.stringify(ballot.results) === JSON.stringify(before)) return;
+      if (JSON.stringify(ballot.results) === JSON.stringify(before)
+          && JSON.stringify(ballot.actual) === JSON.stringify(state.ballot.actual || {})) return;
       state.ballot.results = ballot.results;
+      state.ballot.actual = ballot.actual;
       const current = !ballotUi.done && state.ballot.categories[ballotUi.index];
       const fresh = current && ballot.results[current.id] && !before[current.id];
       if (!ballotUi.animating) refreshPage();
@@ -628,10 +651,21 @@ function renderReveal() {
     const top = topNames(category, totals[category.id][kind]);
     return h("td", { class: top.votes ? kind : "muted" }, top.text, top.votes ? h("small", { class: "muted" }, ` (${top.votes})`) : null);
   };
+  // The real winner at The Game Awards: chosen from the category's nominees, shown to everyone after the deadline
+  const realSelect = (category) => {
+    const current = state.summary.winners[category.id];
+    const select = h("select", { class: "real-select", "aria-label": `${category.name}: ki nyert a gálán?` },
+      h("option", { value: "" }, "– még nincs –"),
+      ...category.nominees.map((nominee, i) => h("option", { value: String(i) }, nomineeName(category, i))));
+    select.value = current === undefined ? "" : String(current);
+    select.addEventListener("change", () => setWinner(category.id, select.value === "" ? null : Number(select.value)));
+    return h("td", { class: current === undefined ? "" : "has-real" }, select);
+  };
   const rows = state.ballot.categories.map((category) => {
     const isShown = shown.has(category.id);
     return h("tr", { class: isShown ? "shown" : "" },
       h("th", { scope: "row" }, category.name),
+      realSelect(category),
       cell(category, "predict"), cell(category, "pick"),
       h("td", { class: "reveal-action" }, h("button", {
         type: "button",
@@ -640,7 +674,7 @@ function renderReveal() {
       }, isShown ? "Elrejtés" : "Mutatás mindenkinek")));
   });
   $("reveal-table").replaceChildren(
-    h("thead", {}, h("tr", {}, h("th", {}, "Kategória"), h("th", {}, "🔮 Tipp díjazottja"), h("th", {}, "❤️ Kedvenc díjazottja"), h("th", {}, ""))),
+    h("thead", {}, h("tr", {}, h("th", {}, "Kategória"), h("th", {}, "⭐ A gálán nyert"), h("th", {}, "🔮 Imbul tippje"), h("th", {}, "🏆 Imbul-díj"), h("th", {}, "Imbul eredmény"))),
     h("tbody", {}, ...rows));
 }
 
@@ -681,6 +715,11 @@ async function setWinner(category, nominee) {
   try {
     state.summary = await api("api/admin/winners", { method: "PUT", body: { category, nominee } });
     renderAdmin();
+    // The admin's own Díjazottak pages follow at once
+    if (resultsMode()) {
+      state.ballot.actual = state.summary.winners;
+      if (!ballotUi.animating) refreshPage();
+    }
   } catch (error) {
     $("admin-error").textContent = error.message;
   }
