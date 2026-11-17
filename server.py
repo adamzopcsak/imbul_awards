@@ -781,7 +781,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._error(HTTPStatus.NOT_FOUND, "Még nem.")
         self._json(HTTPStatus.OK, {"icon": "🏆", "name": "Imbul Awards", "url": self.app.config.public_url,
                                    "host": urllib.parse.urlsplit(self.app.config.public_url).netloc,
-                                   "description": "A The Game Awards 2026, Imbul módra: szerinted ki nyer, és te kinek adnád?"})
+                                   "description": "A The Game Awards, Imbul módra: ki kapja? Mondd meg te!"})
 
     def _status(self):
         self._json(HTTPStatus.OK, {"closed": self.app.ballot.closed(), "closesAt": self.app.ballot.public()["closesAt"]})

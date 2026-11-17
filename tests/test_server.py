@@ -414,6 +414,7 @@ class OpeningTests(ServerTest):
         self.assertEqual(response.status, 200)
         self.assertEqual((body["icon"], body["name"], body["url"], body["host"]),
                          ("🏆", "Imbul Awards", "https://imbulawards.yagi.hu", "imbulawards.yagi.hu"))
+        self.assertEqual(body["description"], "A The Game Awards, Imbul módra: ki kapja? Mondd meg te!")
 
     def test_members_get_in_by_themselves_from_the_opening(self):
         self.guild_members = {FRIEND}
