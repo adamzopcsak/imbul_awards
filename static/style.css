@@ -140,7 +140,16 @@ button.small { padding: .3rem .7rem; font-size: .85rem; }
 .page-hint { margin-top: 18px; text-align: center; color: var(--muted); font-size: .85rem; }
 .page.complete .page-hint { color: var(--accent); }
 
-.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.cards { display: grid; grid-template-columns: repeat(var(--count, 6), minmax(0, 1fr)); gap: 10px; }
+/* Narrower screens: a few cards per row, the last row centred, so the cards still fill the frame */
+@media (max-width: 860px) {
+  .cards { display: flex; flex-wrap: wrap; justify-content: center; }
+  .cards .card { width: calc((100% - 30px) / 4); }
+  /* "Ötletem sincs": a full-width bar under the nominees instead of a lone card */
+  .cards .card.no-idea { width: 100%; flex-direction: row; align-items: center; }
+  .card.no-idea .art { aspect-ratio: auto; width: 48px; height: 44px; flex: none; font-size: 1.6rem; background: transparent; }
+  .card.no-idea .card-text { padding: 0 8px 0 0; }
+}
 .card {
   position: relative;
   display: flex;
@@ -319,7 +328,8 @@ select { color-scheme: dark; }
   .panel { padding: 16px; }
   .me { margin-left: 0; }
   .page { padding: 16px 12px; }
-  .cards { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .cards { gap: 8px; }
+  .cards .card { width: calc((100% - 16px) / 3); }
   .card-name { font-size: .78rem; }
   .card-detail { display: none; }
   .arrow { width: 38px; height: 38px; }
