@@ -317,6 +317,35 @@ class ClosedVoteTests(ServerTest):
         self.assertEqual(response.status, 200)
 
 
+class ImageTests(unittest.TestCase):
+    def test_only_wikimedia_pictures_are_passed_on(self):
+        with tempfile.TemporaryDirectory() as folder:
+            images = Path(folder) / "images.json"
+            images.write_text(json.dumps({
+                "Grand Theft Auto VI": {"title": "GTA VI", "url": "https://upload.wikimedia.org/wikipedia/en/4/46/GTA_VI.png"},
+                "Pragmata": {"title": "Pragmata", "url": "https://evil.example/x.png"},
+                "Saros": {"title": None, "url": None},
+            }), encoding="utf-8")
+            ballot = server.Ballot(server.NOMINEES_FILE, images)
+        goty = ballot.public()["categories"][0]["nominees"]
+        self.assertEqual(goty[2]["image"], "https://upload.wikimedia.org/wikipedia/en/4/46/GTA_VI.png")
+        self.assertIsNone(goty[0]["image"])
+        self.assertNotIn("Pragmata", ballot.images)
+        self.assertNotIn("Saros", ballot.images)
+
+    def test_every_stored_picture_is_usable(self):
+        images = json.loads(server.IMAGES_FILE.read_text(encoding="utf-8"))
+        for name, entry in images.items():
+            if entry["url"]:
+                with self.subTest(name=name):
+                    self.assertRegex(entry["url"], server.IMAGE_URL)
+                    self.assertNotIn("?", entry["url"])
+
+    def test_pictures_are_allowed_by_the_page_policy(self):
+        policy = server.SECURITY_HEADERS["Content-Security-Policy"]
+        self.assertIn("https://upload.wikimedia.org", policy)
+
+
 class NomineesFileTests(unittest.TestCase):
     def test_every_category_is_well_formed(self):
         data = json.loads(server.NOMINEES_FILE.read_text(encoding="utf-8"))

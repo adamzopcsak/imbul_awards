@@ -5,7 +5,8 @@
 // The answer offered in every category next to the nominees, for those who would rather not guess
 const NO_IDEA = -1;
 const NO_IDEA_LABEL = "🤷 Ötletem sincs, ember";
-const KIND_LABELS ={ predict: "🔮 Szerinted ki nyeri?", pick: "❤️ Te kinek adnád?" };
+const KIND_LABELS = { predict: "🔮 Szerinted ki nyeri?", pick: "❤️ Te kinek adnád?" };
+const QUESTIONS = { predict: "🔮 Szerinted ki fogja megkapni a díjat?", pick: "❤️ Te kinek adnád a díjat?" };
 const LOGIN_ERRORS = {
   "nincs-jog": "Beléptél, de még nincs jogod szavazni. Szólj yaginak, és beenged.",
   sikertelen: "A Discord belépés nem sikerült, próbáld újra.",
@@ -64,17 +65,29 @@ function personEl(person, sub) {
 
 const state = { me: null, ballot: null, votes: {}, summary: null, access: null };
 
-// --- Ballot
+// --- Ballot: one category per page. Once both questions of a page are answered, the next unanswered category
+// slides in by itself; the arrows, the dots, ← / → and the address (#goty) move between pages by hand.
+
+const AUTO_ADVANCE_MS = 750;
+const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
+const ballotUi = { index: 0, done: false, advanceTimer: null, animating: false };
 
 function voteCount() {
   return Object.values(state.votes).reduce((sum, kinds) => sum + Object.keys(kinds).length, 0);
 }
 
-function renderProgress() {
-  const total = state.ballot.categories.length * 2;
-  const done = voteCount();
-  $("progress-count").textContent = `${done} / ${total}`;
-  $("progress-bar").style.width = `${total ? (done / total) * 100 : 0}%`;
+function isComplete(category) {
+  const votes = state.votes[category.id] || {};
+  return votes.predict !== undefined && votes.pick !== undefined;
+}
+
+function firstOpenIndex(from = 0) {
+  const categories = state.ballot.categories;
+  for (let step = 0; step < categories.length; step++) {
+    const index = (from + step) % categories.length;
+    if (!isComplete(categories[index])) return index;
+  }
+  return -1;
 }
 
 function renderDeadline() {
@@ -82,66 +95,231 @@ function renderDeadline() {
   const when = dateTime.format(new Date(closesAt));
   $("deadline").textContent = closed
     ? `A szavazás lezárult (${when}). Gála: ${ceremony}.`
-    : `Szavazni ${when}-ig lehet. Gála: ${ceremony}.`;
+    : `Szavazni ${when}-ig lehet · Gála: ${ceremony}`;
 }
 
-function nomineeButton(category, kind, index, nominee) {
+function renderNav() {
+  const categories = state.ballot.categories;
+  const done = categories.filter(isComplete).length;
+  $("step").textContent = ballotUi.done ? "Összegzés" : `${ballotUi.index + 1} / ${categories.length}`;
+  $("done-count").textContent = `${done} / ${categories.length} kategória kész`;
+  $("progress-bar").style.width = `${(done / categories.length) * 100}%`;
+  $("prev").disabled = !ballotUi.done && ballotUi.index === 0;
+  $("next").disabled = ballotUi.done;
+  $("dots").replaceChildren(...categories.map((category, index) => h("button", {
+    type: "button",
+    class: `dot${isComplete(category) ? " complete" : ""}${!ballotUi.done && index === ballotUi.index ? " current" : ""}`,
+    title: `${index + 1}. ${category.name}`,
+    "aria-label": `${index + 1}. ${category.name}${isComplete(category) ? " (kész)" : ""}`,
+    onclick: () => goTo(index),
+  })));
+}
+
+function initials(name) {
+  return name.replace(/[^\p{L}\p{N} ]/gu, "").split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase();
+}
+
+function artEl(nominee, index) {
+  if (index === NO_IDEA) return h("span", { class: "art placeholder shrug" }, "🤷");
+  if (nominee.image) {
+    const img = h("img", { src: nominee.image, alt: "", loading: "lazy", decoding: "async", referrerpolicy: "no-referrer" });
+    // A picture that does not load becomes the placeholder
+    img.addEventListener("error", () => img.replaceWith(h("span", { class: "art placeholder" }, initials(nominee.name))));
+    // Logos (rendered from an SVG) are often transparent with dark text: shown whole, on a light background
+    return h("span", { class: /\.svg\//i.test(nominee.image) ? "art logo" : "art" }, img);
+  }
+  return h("span", { class: "art placeholder" }, initials(nominee.name));
+}
+
+function nomineeCard(category, kind, index, nominee) {
   const chosen = state.votes[category.id] && state.votes[category.id][kind] === index;
   return h("button", {
     type: "button",
-    class: index === NO_IDEA ? "nominee no-idea" : "nominee",
+    class: `card${index === NO_IDEA ? " no-idea" : ""}`,
     "aria-pressed": chosen ? "true" : "false",
     disabled: state.ballot.closed,
+    "data-kind": kind,
+    "data-index": String(index),
     onclick: () => vote(category.id, kind, chosen ? null : index),
-  }, h("span", { class: "nominee-name" }, nominee.name),
-  nominee.detail ? h("span", { class: "nominee-detail" }, nominee.detail) : null);
+  }, artEl(nominee, index), h("span", { class: "check", "aria-hidden": "true" }, "✓"),
+  h("span", { class: "card-text" }, h("span", { class: "card-name" }, nominee.name),
+    nominee.detail ? h("span", { class: "card-detail" }, nominee.detail) : null));
 }
 
-function categoryCard(category) {
-  const votes = state.votes[category.id] || {};
-  const complete = votes.predict !== undefined && votes.pick !== undefined;
-  return h("article", { class: `panel category${complete ? " complete" : ""}`, id: `cat-${category.id}` },
-    h("header", { class: "category-head" },
-      h("h2", {}, category.name), h("span", { class: "original" }, category.original),
-      complete ? h("span", { class: "done", title: "Mindkét szavazat megvan" }, "✓") : null),
-    h("div", { class: "kinds" }, ...["predict", "pick"].map((kind) =>
-      h("div", { class: `kind ${kind}` }, h("h3", {}, KIND_LABELS[kind]),
-        h("div", { class: "nominees" },
-          ...category.nominees.map((nominee, index) => nomineeButton(category, kind, index, nominee)),
-          nomineeButton(category, kind, NO_IDEA, { name: NO_IDEA_LABEL }))))));
+function categoryPage(index) {
+  const category = state.ballot.categories[index];
+  return h("article", { class: `page${isComplete(category) ? " complete" : ""}`, "data-category": category.id },
+    h("header", { class: "page-head" },
+      h("span", { class: "eyebrow" }, `${index + 1}. kategória · ${category.original}`),
+      h("h2", {}, category.name)),
+    ...["predict", "pick"].map((kind) => h("section", { class: `question ${kind}` },
+      h("h3", {}, QUESTIONS[kind]),
+      h("div", { class: "cards" },
+        ...category.nominees.map((nominee, i) => nomineeCard(category, kind, i, nominee)),
+        nomineeCard(category, kind, NO_IDEA, { name: "Ötletem sincs, ember" })))),
+    h("p", { class: "page-hint" }, isComplete(category)
+      ? "✓ Mindkét szavazatod megvan. Bármikor módosíthatod."
+      : "Válassz mindkét kérdésnél, és jön a következő kategória."));
+}
+
+function donePage() {
+  const categories = state.ballot.categories;
+  const open = categories.filter((c) => !isComplete(c)).length;
+  const rows = categories.map((category, index) => {
+    const votes = state.votes[category.id] || {};
+    const cell = (kind) => h("td", { class: votes[kind] === undefined ? "muted" : kind },
+      votes[kind] === undefined ? "–" : nomineeName(category, votes[kind]));
+    return h("tr", {}, h("th", { scope: "row" },
+      h("button", { type: "button", class: "link-button", onclick: () => goTo(index) }, category.name)),
+    cell("predict"), cell("pick"));
+  });
+  return h("article", { class: "page done-page" },
+    h("div", { class: "celebrate", "aria-hidden": "true" }, "🏆"),
+    h("h2", {}, open ? `Már csak ${open} kategória van hátra` : "Kész vagy, köszi a szavazást!"),
+    h("p", { class: "muted" }, open
+      ? "Kattints egy kategóriára, hogy befejezd. A határidőig mindent módosíthatsz."
+      : "A határidőig bármit módosíthatsz: kattints egy kategóriára."),
+    h("div", { class: "table-wrap" }, h("table", { class: "detail-table" },
+      h("thead", {}, h("tr", {}, h("th", {}, "Kategória"), h("th", {}, "🔮 Szerinted nyer"), h("th", {}, "❤️ Te ennek adnád"))),
+      h("tbody", {}, ...rows))));
+}
+
+function currentPage() {
+  return ballotUi.done ? donePage() : categoryPage(ballotUi.index);
+}
+
+// Swaps the page; `direction` is "next", "prev" or null (no animation)
+function showPage(direction) {
+  const stage = $("stage");
+  const old = stage.firstElementChild;
+  const page = currentPage();
+  renderNav();
+  const id = ballotUi.done ? "kesz" : state.ballot.categories[ballotUi.index].id;
+  if (location.hash !== `#${id}`) history.replaceState(null, "", `#${id}`);
+  if (!old || !direction || reducedMotion.matches) {
+    stage.replaceChildren(page);
+    return;
+  }
+  ballotUi.animating = true;
+  old.classList.add(`leave-${direction}`);
+  old.addEventListener("animationend", () => {
+    page.classList.add(`enter-${direction}`);
+    stage.replaceChildren(page);
+    page.addEventListener("animationend", () => {
+      page.classList.remove(`enter-${direction}`);
+      ballotUi.animating = false;
+    }, { once: true });
+    window.scrollTo({ top: Math.min(window.scrollY, $("ballot-view").offsetTop - 16), behavior: "smooth" });
+  }, { once: true });
+}
+
+function cancelAdvance() {
+  clearTimeout(ballotUi.advanceTimer);
+  ballotUi.advanceTimer = null;
+}
+
+function goTo(index) {
+  cancelAdvance();
+  if (ballotUi.animating) return;
+  const direction = ballotUi.done || index < ballotUi.index ? "prev" : "next";
+  if (!ballotUi.done && index === ballotUi.index) return;
+  ballotUi.done = false;
+  ballotUi.index = index;
+  showPage(direction);
+}
+
+function goNext() {
+  if (ballotUi.done) return;
+  if (ballotUi.index < state.ballot.categories.length - 1) return goTo(ballotUi.index + 1);
+  goToDone();
+}
+
+function goPrev() {
+  if (ballotUi.done) return goTo(state.ballot.categories.length - 1);
+  if (ballotUi.index > 0) goTo(ballotUi.index - 1);
+}
+
+function goToDone() {
+  cancelAdvance();
+  if (ballotUi.animating) return;
+  ballotUi.done = true;
+  showPage("next");
+}
+
+// After both questions are answered: a short pause to see the choice, then the next unanswered category
+function scheduleAdvance() {
+  cancelAdvance();
+  const from = ballotUi.index;
+  $("stage").firstElementChild.classList.add("just-completed");
+  ballotUi.advanceTimer = setTimeout(() => {
+    ballotUi.advanceTimer = null;
+    if (ballotUi.done || ballotUi.index !== from) return;
+    const next = firstOpenIndex(from + 1);
+    if (next === -1) goToDone();
+    else goTo(next);
+  }, AUTO_ADVANCE_MS);
+}
+
+function refreshPage() {
+  // Same page, new state: rebuilt in place, without animation
+  const stage = $("stage");
+  const old = stage.firstElementChild;
+  const page = currentPage();
+  if (old && old.classList.contains("just-completed")) page.classList.add("just-completed");
+  stage.replaceChildren(page);
+  renderNav();
 }
 
 function renderBallot() {
   renderDeadline();
-  renderProgress();
-  $("categories").replaceChildren(...state.ballot.categories.map(categoryCard));
+  const fromHash = state.ballot.categories.findIndex((c) => `#${c.id}` === location.hash);
+  const open = firstOpenIndex(0);
+  ballotUi.done = fromHash === -1 && (location.hash === "#kesz" || open === -1);
+  ballotUi.index = fromHash !== -1 ? fromHash : Math.max(open, 0);
+  showPage(null);
 }
 
 async function vote(categoryId, kind, nominee) {
   $("ballot-error").textContent = "";
+  const category = state.ballot.categories.find((c) => c.id === categoryId);
+  const wasComplete = isComplete(category);
   const previous = state.votes[categoryId] ? { ...state.votes[categoryId] } : undefined;
   // Show the choice at once; the server's answer confirms it
   state.votes[categoryId] = { ...(previous || {}) };
   if (nominee === null) delete state.votes[categoryId][kind];
   else state.votes[categoryId][kind] = nominee;
-  rerenderCategory(categoryId);
+  if (!isComplete(category)) cancelAdvance();
+  refreshPage();
+  if (!wasComplete && isComplete(category)) scheduleAdvance();
   try {
     const { votes } = await api("api/votes", { method: "PUT", body: { category: categoryId, kind, nominee } });
     state.votes = votes;
   } catch (error) {
+    cancelAdvance();
     if (previous) state.votes[categoryId] = previous;
     else delete state.votes[categoryId];
     $("ballot-error").textContent = `Nem sikerült menteni: ${error.message}`;
     if (error.status === 401 || error.status === 403) return start();
+    refreshPage();
   }
-  rerenderCategory(categoryId);
+  renderNav();
 }
 
-function rerenderCategory(categoryId) {
-  const category = state.ballot.categories.find((c) => c.id === categoryId);
-  $(`cat-${categoryId}`).replaceWith(categoryCard(category));
-  renderProgress();
-}
+// A link or the back button changing only the #category part of the address
+window.addEventListener("hashchange", () => {
+  if (!state.ballot) return;
+  const index = state.ballot.categories.findIndex((c) => `#${c.id}` === location.hash);
+  if (index !== -1) goTo(index);
+  else if (location.hash === "#kesz") goToDone();
+});
+$("prev").addEventListener("click", goPrev);
+$("next").addEventListener("click", goNext);
+document.addEventListener("keydown", (event) => {
+  if ($("ballot-view").hidden || event.target.closest("input, select, textarea") || event.altKey || event.ctrlKey || event.metaKey) return;
+  if (document.getElementById("new-version")) return;
+  if (event.key === "ArrowRight") goNext();
+  if (event.key === "ArrowLeft") goPrev();
+});
 
 // --- Admin
 

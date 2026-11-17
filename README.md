@@ -9,8 +9,14 @@ Every category of The Game Awards 2026 has two votes:
 2. **Te kinek adnád a díjat?** (❤️, who you would give it to)
 
 Every category also offers **🤷 Ötletem sincs, ember** (stored as nominee `-1`) for those who would rather not
-guess; it is counted separately on the admin page and is never a correct guess. Clicking an answer saves the vote at once; clicking it again takes it back. Votes can be changed until the deadline in
-`nominees.json` (`votingClosesAt`), after which the ballot is read-only.
+guess; it is counted separately on the admin page and is never a correct guess.
+
+The ballot is paged: one category per page, every nominee as a card with its picture. Clicking a card saves the vote
+at once; clicking it again takes it back. Once both questions of a page are answered, the page lights up and the next
+unanswered category slides in by itself; after the last one comes a summary of all your votes. The arrows, the dots
+(gold when a category is done), the ← / → keys and the address (`#goty`, `#kesz` for the summary) move between pages
+by hand. Votes can be changed until the deadline in `nominees.json` (`votingClosesAt`), after which the ballot is
+read-only.
 
 ## Who can get in
 
@@ -42,6 +48,12 @@ The admin votes like everyone else, and also gets the **Admin** tab:
 nominee as `[name, studio or detail]`). Votes refer to a nominee by its position in its category, so do not reorder
 or remove nominees once voting has started (fixing a typo is fine). The 2026 list was announced on 2026-11-17; the
 sources are in the file.
+
+**Pictures:** `images.json` maps each nominee's name to a picture from its English Wikipedia article (cover art,
+poster or photo; for a user creation, the game it was made for). `scripts/fetch_images.py` finds them; run it again
+after changing the nominees (it only looks up the new names). Wrong matches are fixed in its `OVERRIDES`. The pictures
+are not copied into the repo: the page loads them from `upload.wikimedia.org` (allowed in the Content-Security-Policy,
+sent without a referrer). A nominee without a picture, or whose picture does not load, gets its initials instead.
 
 ## How it works
 

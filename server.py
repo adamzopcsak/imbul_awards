@@ -56,6 +56,9 @@ from pathlib import Path
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
 NOMINEES_FILE = APP_DIR / "nominees.json"
+IMAGES_FILE = APP_DIR / "images.json"
+# The nominees' pictures are shown straight from Wikimedia (see scripts/fetch_images.py)
+IMAGE_URL = re.compile(r"https://(upload|thumb)\.wikimedia\.org/[A-Za-z0-9_./%()'!,~+-]+")
 VERSION_FILE = APP_DIR / "version.json"
 PREFIX = ""  # the app has the whole of imbulawards.yagi.hu
 STATIC_FILES = {
@@ -83,7 +86,8 @@ SECURITY_HEADERS = {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Referrer-Policy": "same-origin",
-    "Content-Security-Policy": "default-src 'self'; img-src 'self' https://cdn.discordapp.com; "
+    "Content-Security-Policy": "default-src 'self'; "
+                               "img-src 'self' https://cdn.discordapp.com https://upload.wikimedia.org https://thumb.wikimedia.org; "
                                "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
     "X-Robots-Tag": "noindex",
 }
@@ -156,13 +160,17 @@ class ValidationError(ValueError):
 class Ballot:
     """The categories and nominees (nominees.json). A nominee is referred to by its index in its category."""
 
-    def __init__(self, path=NOMINEES_FILE):
+    def __init__(self, path=NOMINEES_FILE, images_path=IMAGES_FILE):
         data = json.loads(Path(path).read_text(encoding="utf-8"))
         self.title = data["title"]
         self.ceremony = data.get("ceremony", "")
         self.closes_at = datetime.fromisoformat(data["votingClosesAt"])
         self.categories = data["categories"]
         self.by_id = {category["id"]: category for category in self.categories}
+        # {nominee name: {title, url}} from scripts/fetch_images.py; a nominee without one gets a placeholder
+        images = json.loads(Path(images_path).read_text(encoding="utf-8")) if Path(images_path).is_file() else {}
+        self.images = {name: entry["url"] for name, entry in images.items()
+                       if isinstance(entry, dict) and isinstance(entry.get("url"), str) and IMAGE_URL.fullmatch(entry["url"])}
 
     def closed(self):
         return datetime.now(timezone.utc) >= self.closes_at
@@ -185,7 +193,8 @@ class Ballot:
             "closesAt": self.closes_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
             "closed": self.closed(),
             "categories": [{"id": c["id"], "name": c["name"], "original": c["original"],
-                            "nominees": [{"name": n[0], "detail": n[1]} for n in c["nominees"]]}
+                            "nominees": [{"name": n[0], "detail": n[1], "image": self.images.get(n[0])}
+                                         for n in c["nominees"]]}
                            for c in self.categories],
         }
 
