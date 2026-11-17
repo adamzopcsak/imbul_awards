@@ -130,7 +130,8 @@ def query_for(category_id, name, detail):
 
 
 def save(images):
-    IMAGES.write_text(json.dumps(dict(sorted(images.items())), ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    IMAGES.write_text(json.dumps(dict(sorted(images.items())), ensure_ascii=False, indent=1) + "\n", encoding="utf-8",
+                      newline="\n")
 
 
 def main():
