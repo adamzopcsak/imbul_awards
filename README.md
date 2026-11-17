@@ -1,0 +1,98 @@
+# Imbul Awards
+
+The Imbul a Bakterház Discord server's own version of The Game Awards, at https://imbulawards.yagi.hu. The UI is in
+Hungarian.
+
+Every category of The Game Awards 2026 has two votes:
+
+1. **Szerinted ki fogja megkapni a díjat?** (🔮, who you think will win)
+2. **Te kinek adnád a díjat?** (❤️, who you would give it to)
+
+Clicking a nominee saves the vote at once; clicking it again takes it back. Votes can be changed until the deadline in
+`nominees.json` (`votingClosesAt`), after which the ballot is read-only.
+
+## Who can get in
+
+Login is with Discord (OAuth2, `identify` scope only). Only these people get in:
+
+- the admins, `AWARDS_ADMIN_USERS` (they can never be locked out), and
+- those the admin lets in on the admin page (**Admin → Hozzáférés**).
+
+Everyone else is refused ("még nincs jogod szavazni") and listed under **Belépni próbáltak** on the admin page with
+their Discord name and id, so one click lets them in. Access is checked on every request, so taking it away works at
+once, even for someone who is logged in. At launch nobody but the admin has access.
+
+The yagi.hu hub shows the project as **Imbul ******** ("Hamarosan", no link). The real tile, linking here, is in the
+hub's admin-only `private/tiles.js`.
+
+## Admin
+
+The admin votes like everyone else, and also gets the **Admin** tab:
+
+- **Összesítés:** per category, how many 🔮 and ❤️ votes each nominee got. After the show, the 🏆 button marks the
+  real winner.
+- **Ki mire szavazott:** one person's votes in every category, and a table of everyone's votes.
+- **Tippverseny:** who guessed the most winners (🔮); ties go to whose ❤️ favourite won more often.
+- **Hozzáférés:** let people in by Discord id or from the refused list, and take access away.
+
+## Nominees
+
+`nominees.json` holds the categories and nominees (Hungarian category name, the original English name, and each
+nominee as `[name, studio or detail]`). Votes refer to a nominee by its position in its category, so do not reorder
+or remove nominees once voting has started (fixing a typo is fine). The 2026 list was announced on 2026-11-17; the
+sources are in the file.
+
+## How it works
+
+- `server.py` (Python standard library only) serves the page from `static/` and the JSON API (see its docstring).
+- The data is one SQLite database, `awards.db`, in the data folder (`/var/lib/imbul-awards` on the server, never
+  touched by a deploy): users, access, refused logins, votes and winners. The session signing key is generated into
+  the same folder on first start (or set `AWARDS_SESSION_SECRET`); a new key logs everyone out.
+- The session is a signed cookie (HMAC-SHA256, 30 days, HttpOnly, SameSite=Lax, Secure on HTTPS). Writes must be JSON
+  and come from this site (Origin / Sec-Fetch-Site check). Every response has a strict Content-Security-Policy (no
+  inline scripts or styles), `X-Frame-Options: DENY` and `nosniff`.
+- **Versioning:** the version is in `VERSION` (semantic versioning); bump it in the pull request of a change.
+  `deploy.sh` writes `version.json` (the version and the release time), shown at the bottom of the page. An open page
+  checks it every minute, and once a newer version is live a "Frissült az oldal" dialog offers a reload, as on Imbul
+  Forever.
+
+## Run locally
+
+```sh
+python server.py --port 8006 --data data --dev-login
+```
+
+Then open http://127.0.0.1:8006/. `--dev-login` adds `/dev-login?id=<Discord id>&name=<name>`, which logs in without
+Discord; it never works on an https URL. Set `AWARDS_ADMIN_USERS` to the id you use there to see the admin tab.
+`data/` is git-ignored.
+
+## Tests
+
+```sh
+python -m unittest discover -s tests -v
+```
+
+They start the real server on a free port with a temporary data folder; Discord is replaced by a fake. GitHub Actions
+runs them on every pull request and push to `main` (`.github/workflows/tests.yml`), and `deploy.sh` runs them before
+every deploy.
+
+## Setup on the server (once)
+
+1. **DNS:** `imbulawards.yagi.hu` must point to the VPS (it already did on 2026-11-17).
+2. **Discord:** in the Developer Portal, the OAuth2 application (the one Imbul Stats uses is fine) → OAuth2 →
+   Redirects: add `https://imbulawards.yagi.hu/auth/callback`.
+3. **Settings:** copy `deploy/imbul-awards.env.example` to `/etc/imbul-awards.env` (`chmod 600`) and fill it in. The
+   admin id is the same as `DASHBOARD_ADMIN_USERS` in Imbul Stats' `.env`.
+4. **Caddy:** add the block in `deploy/Caddyfile.snippet` to `/etc/caddy/Caddyfile` (and to its copy in the
+   yagismot_and_imbulstats repo), then `systemctl reload caddy`.
+5. Run `./deploy.sh`.
+
+## Deploy
+
+```sh
+./deploy.sh
+```
+
+It runs the tests on `origin/main`, then unpacks `server.py`, `nominees.json`, `static/` and the systemd unit into
+`/opt/imbul-awards` on the VPS, writes `version.json`, installs `deploy/imbul-awards.service` and restarts it. It stops
+if `/etc/imbul-awards.env` is missing.

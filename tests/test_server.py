@@ -1,0 +1,318 @@
+"""Tests of server.py: they start the real server on a free port with a temporary data folder. Discord is never
+called: the OAuth exchange is replaced by a function that returns a made-up user."""
+
+import http.client
+import json
+import sys
+import tempfile
+import threading
+import unittest
+import urllib.parse
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import server  # noqa: E402
+
+ADMIN = "100000000000000001"
+FRIEND = "200000000000000002"
+STRANGER = "300000000000000003"
+ORIGIN = "https://imbulawards.yagi.hu"
+
+
+class ServerTest(unittest.TestCase):
+    closes_at = "2099-12-11T01:00:00+01:00"
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        nominees = json.loads(server.NOMINEES_FILE.read_text(encoding="utf-8"))
+        nominees["votingClosesAt"] = self.closes_at
+        ballot_file = Path(self.tmp.name) / "nominees.json"
+        ballot_file.write_text(json.dumps(nominees), encoding="utf-8")
+        config = server.Config(env={
+            "AWARDS_PUBLIC_URL": ORIGIN, "DISCORD_CLIENT_ID": "1", "DISCORD_CLIENT_SECRET": "x",
+            "AWARDS_ADMIN_USERS": ADMIN,
+        })
+        self.app = server.App(config, Path(self.tmp.name) / "data", server.Ballot(ballot_file))
+        self.httpd = server.make_server("127.0.0.1", 0, self.app)
+        self.port = self.httpd.server_address[1]
+        self.discord_users = {}
+        self.httpd.RequestHandlerClass.discord_user = staticmethod(lambda config, code: self.discord_users[code])
+        threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        self.tmp.cleanup()
+
+    def request(self, method, path, body=None, cookie=None, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=10)
+        all_headers = dict(headers or {})
+        if cookie:
+            all_headers["Cookie"] = cookie
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            all_headers.setdefault("Content-Type", "application/json")
+            all_headers.setdefault("Origin", ORIGIN)
+        conn.request(method, path, body=data, headers=all_headers)
+        response = conn.getresponse()
+        raw = response.read()
+        conn.close()
+        try:
+            payload = json.loads(raw) if raw else None
+        except ValueError:
+            payload = raw
+        return response, payload
+
+    @staticmethod
+    def set_cookies(response):
+        jar = {}
+        for header in response.headers.get_all("Set-Cookie") or []:
+            name, value = header.split(";", 1)[0].split("=", 1)
+            jar[name] = value
+        return jar
+
+    def login(self, user_id, name="Valaki"):
+        """The whole Discord flow; returns the session cookie header, or None if refused (and the redirect)."""
+        response, _ = self.request("GET", "/login")
+        self.assertEqual(response.status, 302)
+        location = urllib.parse.urlsplit(response.headers["Location"])
+        self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", server.DISCORD_AUTHORIZE_URL)
+        params = dict(urllib.parse.parse_qsl(location.query))
+        self.assertEqual(params["redirect_uri"], "https://imbulawards.yagi.hu/auth/callback")
+        self.assertEqual(params["scope"], "identify")
+        state_cookie = self.set_cookies(response)[server.STATE_COOKIE]
+        code = f"code-{user_id}"
+        self.discord_users[code] = {"id": user_id, "username": name.lower(), "global_name": name,
+                                    "avatar": "0123456789abcdef0123456789abcdef"}
+        response, _ = self.request("GET", f"/auth/callback?code={code}&state={params['state']}",
+                                   cookie=f"{server.STATE_COOKIE}={state_cookie}")
+        self.assertEqual(response.status, 302)
+        session = self.set_cookies(response).get(server.SESSION_COOKIE)
+        return (f"{server.SESSION_COOKIE}={session}" if session else None), response.headers["Location"]
+
+
+class LoginTests(ServerTest):
+    def test_page_is_served_with_a_strict_policy(self):
+        response, body = self.request("GET", "/")
+        self.assertEqual(response.status, 200)
+        self.assertIn(b"Imbul Awards", body if isinstance(body, bytes) else b"")
+        self.assertIn("frame-ancestors 'none'", response.headers["Content-Security-Policy"])
+        self.assertIn("max-age", response.headers["Strict-Transport-Security"])
+
+    def test_nobody_logged_in(self):
+        response, _ = self.request("GET", "/api/me")
+        self.assertEqual(response.status, 401)
+        response, _ = self.request("GET", "/api/ballot")
+        self.assertEqual(response.status, 401)
+
+    def test_admin_gets_in(self):
+        cookie, location = self.login(ADMIN, "Yagi")
+        self.assertEqual(location, "/")
+        response, me = self.request("GET", "/api/me", cookie=cookie)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(me["id"], ADMIN)
+        self.assertTrue(me["isAdmin"])
+        self.assertTrue(me["avatarUrl"].startswith("https://cdn.discordapp.com/avatars/"))
+
+    def test_session_cookie_flags(self):
+        response, _ = self.request("GET", "/login")
+        header = response.headers["Set-Cookie"]
+        for flag in ("Path=/", "HttpOnly", "SameSite=Lax", "Secure"):
+            self.assertIn(flag, header)
+
+    def test_everyone_else_is_refused_and_noted(self):
+        cookie, location = self.login(STRANGER, "Idegen")
+        self.assertIsNone(cookie)
+        self.assertEqual(location, "/?hiba=nincs-jog")
+        self.login(STRANGER, "Idegen")
+        admin, _ = self.login(ADMIN)
+        _, access = self.request("GET", "/api/admin/access", cookie=admin)
+        self.assertEqual([(p["id"], p["name"], p["attempts"]) for p in access["refused"]], [(STRANGER, "Idegen", 2)])
+        self.assertEqual(access["granted"], [])
+
+    def test_wrong_state_is_refused(self):
+        self.discord_users["c"] = {"id": ADMIN, "username": "yagi"}
+        response, _ = self.request("GET", "/auth/callback?code=c&state=forged")
+        self.assertEqual(response.headers["Location"], "/?hiba=sikertelen")
+        self.assertNotIn(server.SESSION_COOKIE + "=", (response.headers.get("Set-Cookie") or "").replace(
+            server.SESSION_COOKIE + "_state", ""))
+
+    def test_forged_session_is_ignored(self):
+        cookie, _ = self.login(ADMIN)
+        forged = cookie[:-3] + ("aaa" if not cookie.endswith("aaa") else "bbb")
+        response, _ = self.request("GET", "/api/me", cookie=forged)
+        self.assertEqual(response.status, 401)
+
+    def test_logout_clears_the_cookie(self):
+        cookie, _ = self.login(ADMIN)
+        response, _ = self.request("POST", "/logout", body={}, cookie=cookie)
+        self.assertEqual(response.status, 204)
+        self.assertIn("Max-Age=0", response.headers["Set-Cookie"])
+
+    def test_dev_login_is_off_unless_asked_and_never_on_https(self):
+        response, _ = self.request("GET", f"/dev-login?id={ADMIN}&name=Yagi")
+        self.assertEqual(response.status, 404)
+        self.assertFalse(server.Config(env={"AWARDS_PUBLIC_URL": ORIGIN}, dev_login=True).dev_login)
+        self.assertTrue(server.Config(env={}, dev_login=True).dev_login)
+
+
+class AccessTests(ServerTest):
+    def test_admin_lets_a_friend_in_and_takes_it_back(self):
+        admin, _ = self.login(ADMIN)
+        self.assertIsNone(self.login(FRIEND)[0])
+        response, access = self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": True},
+                                        cookie=admin)
+        self.assertEqual(response.status, 200)
+        self.assertEqual([p["id"] for p in access["granted"]], [FRIEND])
+        self.assertEqual(access["refused"], [])
+        friend, _ = self.login(FRIEND, "Haver")
+        response, me = self.request("GET", "/api/me", cookie=friend)
+        self.assertEqual(response.status, 200)
+        self.assertFalse(me["isAdmin"])
+        # Taking it back works at once, even with a live session
+        self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": False}, cookie=admin)
+        response, _ = self.request("GET", "/api/ballot", cookie=friend)
+        self.assertEqual(response.status, 403)
+
+    def test_admin_cannot_be_locked_out(self):
+        admin, _ = self.login(ADMIN)
+        response, body = self.request("POST", "/api/admin/access", body={"userId": ADMIN, "allowed": False},
+                                      cookie=admin)
+        self.assertEqual(response.status, 400)
+
+    def test_bad_ids_are_refused(self):
+        admin, _ = self.login(ADMIN)
+        for user_id in ("123", "abc", 100000000000000001, ""):
+            with self.subTest(user_id=user_id):
+                response, _ = self.request("POST", "/api/admin/access", body={"userId": user_id, "allowed": True},
+                                           cookie=admin)
+                self.assertEqual(response.status, 400)
+
+    def test_admin_pages_are_admin_only(self):
+        admin, _ = self.login(ADMIN)
+        self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": True}, cookie=admin)
+        friend, _ = self.login(FRIEND)
+        for method, path, body in (("GET", "/api/admin/summary", None), ("GET", "/api/admin/access", None),
+                                   ("PUT", "/api/admin/winners", {"category": "goty", "nominee": 0}),
+                                   ("POST", "/api/admin/access", {"userId": STRANGER, "allowed": True})):
+            with self.subTest(path=path):
+                response, _ = self.request(method, path, body=body, cookie=friend)
+                self.assertEqual(response.status, 403)
+
+    def test_writes_from_another_site_are_refused(self):
+        admin, _ = self.login(ADMIN)
+        for headers in ({"Origin": "https://evil.example"}, {"Sec-Fetch-Site": "same-site"},
+                        {"Origin": "https://imbulstats.yagi.hu"}):
+            with self.subTest(headers=headers):
+                response, _ = self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": True},
+                                           cookie=admin, headers=headers)
+                self.assertEqual(response.status, 403)
+        response, _ = self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": True},
+                                   cookie=admin, headers={"Content-Type": "text/plain"})
+        self.assertEqual(response.status, 400)
+
+
+class VoteTests(ServerTest):
+    def setUp(self):
+        super().setUp()
+        self.admin, _ = self.login(ADMIN, "Yagi")
+        self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": True}, cookie=self.admin)
+        self.friend, _ = self.login(FRIEND, "Haver")
+
+    def vote(self, cookie, category, kind, nominee):
+        return self.request("PUT", "/api/votes", body={"category": category, "kind": kind, "nominee": nominee},
+                            cookie=cookie)
+
+    def test_ballot_has_every_category_with_both_questions(self):
+        response, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(len(ballot["categories"]), 30)
+        self.assertEqual(ballot["categories"][0]["id"], "goty")
+        self.assertEqual(ballot["votes"], {})
+        self.assertFalse(ballot["closed"])
+
+    def test_vote_change_and_withdraw(self):
+        response, body = self.vote(self.friend, "goty", "predict", 2)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(body["votes"], {"goty": {"predict": 2}})
+        self.vote(self.friend, "goty", "pick", 5)
+        self.vote(self.friend, "goty", "predict", 1)
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["votes"], {"goty": {"predict": 1, "pick": 5}})
+        _, body = self.vote(self.friend, "goty", "predict", None)
+        self.assertEqual(body["votes"], {"goty": {"pick": 5}})
+
+    def test_bad_votes_are_refused(self):
+        for category, kind, nominee in (("nope", "predict", 0), ("goty", "maybe", 0), ("goty", "pick", 6),
+                                        ("goty", "pick", -1), ("goty", "pick", "1"), ("goty", "pick", True)):
+            with self.subTest(category=category, kind=kind, nominee=nominee):
+                response, _ = self.vote(self.friend, category, kind, nominee)
+                self.assertEqual(response.status, 400)
+
+    def test_strangers_cannot_vote(self):
+        response, _ = self.vote(None, "goty", "pick", 0)
+        self.assertEqual(response.status, 401)
+
+    def test_admin_sees_everything_and_the_leaderboard(self):
+        self.vote(self.friend, "goty", "predict", 2)
+        self.vote(self.friend, "goty", "pick", 5)
+        self.vote(self.friend, "rpg", "predict", 0)
+        self.vote(self.admin, "goty", "predict", 2)
+        self.vote(self.admin, "goty", "pick", 2)
+        self.vote(self.admin, "rpg", "predict", 3)
+        _, summary = self.request("GET", "/api/admin/summary", cookie=self.admin)
+        self.assertEqual(summary["totals"]["goty"]["predict"], [0, 0, 2, 0, 0, 0])
+        self.assertEqual(summary["totals"]["goty"]["pick"], [0, 0, 1, 0, 0, 1])
+        voters = {v["id"]: v for v in summary["voters"]}
+        self.assertEqual(voters[FRIEND]["votes"], {"goty": {"predict": 2, "pick": 5}, "rpg": {"predict": 0}})
+        self.assertEqual(voters[FRIEND]["name"], "Haver")
+        self.assertEqual(voters[ADMIN]["count"], 3)
+
+        self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": 2}, cookie=self.admin)
+        response, summary = self.request("PUT", "/api/admin/winners", body={"category": "rpg", "nominee": 3},
+                                         cookie=self.admin)
+        self.assertEqual(response.status, 200)
+        self.assertEqual(summary["winners"], {"goty": 2, "rpg": 3})
+        self.assertEqual([(s["id"], s["correct"], s["agreed"]) for s in summary["scores"]],
+                         [(ADMIN, 2, 1), (FRIEND, 1, 0)])
+        _, summary = self.request("PUT", "/api/admin/winners", body={"category": "rpg", "nominee": None},
+                                  cookie=self.admin)
+        self.assertEqual(summary["winners"], {"goty": 2})
+
+
+class ClosedVoteTests(ServerTest):
+    closes_at = "2020-01-01T00:00:00+01:00"
+
+    def test_no_votes_after_the_deadline(self):
+        admin, _ = self.login(ADMIN)
+        _, ballot = self.request("GET", "/api/ballot", cookie=admin)
+        self.assertTrue(ballot["closed"])
+        response, _ = self.request("PUT", "/api/votes", body={"category": "goty", "kind": "pick", "nominee": 0},
+                                   cookie=admin)
+        self.assertEqual(response.status, 409)
+        # The admin can still mark the winners
+        response, _ = self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": 0},
+                                   cookie=admin)
+        self.assertEqual(response.status, 200)
+
+
+class NomineesFileTests(unittest.TestCase):
+    def test_every_category_is_well_formed(self):
+        data = json.loads(server.NOMINEES_FILE.read_text(encoding="utf-8"))
+        ids = [c["id"] for c in data["categories"]]
+        self.assertEqual(len(ids), len(set(ids)))
+        for category in data["categories"]:
+            with self.subTest(category=category["id"]):
+                self.assertTrue(category["name"] and category["original"])
+                self.assertGreaterEqual(len(category["nominees"]), 5)
+                for nominee in category["nominees"]:
+                    self.assertEqual(len(nominee), 2)
+                    self.assertTrue(nominee[0])
+        server.Ballot()  # the deadline parses, with a time zone
+        self.assertIsNotNone(server.Ballot().closes_at.tzinfo)
+
+
+if __name__ == "__main__":
+    unittest.main()

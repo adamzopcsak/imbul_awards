@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="hu">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>Imbul Awards</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="style.css">
+<script src="app.js" defer></script>
+</head>
+<body>
+<main>
+  <header class="page-header">
+    <div class="brand">
+      <h1>🏆 Imbul Awards <span class="year">2026</span></h1>
+      <p class="muted">A The Game Awards, az Imbul a Bakterház módra.</p>
+    </div>
+    <div id="me" class="me" hidden>
+      <span class="person" id="me-person"></span>
+      <button type="button" class="secondary small" id="logout">Kijelentkezés</button>
+    </div>
+  </header>
+
+  <p id="loading" class="muted">Betöltés…</p>
+
+  <!-- Not logged in, or no access yet -->
+  <section id="login-view" class="panel login" hidden>
+    <h2>Szavazz te is!</h2>
+    <p>Minden kategóriában két kérdés: <b>szerinted ki fogja megkapni a díjat</b>, és <b>te kinek adnád</b>.
+      A szavazáshoz Discorddal kell belépni.</p>
+    <p id="login-error" class="notice" role="alert" hidden></p>
+    <a class="button discord" href="login">Belépés Discorddal</a>
+  </section>
+
+  <nav id="tabs" class="tabs" hidden>
+    <button type="button" data-tab="ballot" aria-pressed="true">🗳️ Szavazás</button>
+    <button type="button" data-tab="admin" aria-pressed="false" id="admin-tab" hidden>📊 Admin</button>
+  </nav>
+
+  <!-- The ballot -->
+  <section id="ballot-view" hidden>
+    <div class="panel intro">
+      <div>
+        <p id="deadline"></p>
+        <p class="muted small-text">Kattints egy jelöltre a kiválasztáshoz, még egyszer a visszavonáshoz. Minden kattintás
+          azonnal mentődik, a határidőig bármikor módosíthatsz.</p>
+      </div>
+      <div class="progress">
+        <b id="progress-count">0 / 0</b>
+        <span class="muted">szavazat</span>
+        <div class="bar"><div id="progress-bar"></div></div>
+      </div>
+    </div>
+    <p id="ballot-error" class="error" role="alert"></p>
+    <div id="categories" class="categories"></div>
+  </section>
+
+  <!-- Admin -->
+  <section id="admin-view" hidden>
+    <nav class="subtabs">
+      <button type="button" data-sub="totals" aria-pressed="true">Összesítés</button>
+      <button type="button" data-sub="voters" aria-pressed="false">Ki mire szavazott</button>
+      <button type="button" data-sub="scores" aria-pressed="false">Tippverseny</button>
+      <button type="button" data-sub="access" aria-pressed="false">Hozzáférés</button>
+    </nav>
+    <p id="admin-error" class="error" role="alert"></p>
+
+    <div data-panel="totals">
+      <p class="muted small-text">Kategóriánként, hogy ki hány szavazatot kapott. A 🏆 gombbal jelöld meg az igazi
+        nyertest a gála után: ebből számol a tippverseny.</p>
+      <div id="totals" class="categories"></div>
+    </div>
+
+    <div data-panel="voters" hidden>
+      <div class="panel">
+        <label class="inline-label">Szavazó
+          <select id="voter-select"></select>
+        </label>
+        <div id="voter-detail"></div>
+      </div>
+      <div class="panel">
+        <h2>Táblázat</h2>
+        <p class="muted small-text">🔮 = szerinte ki nyeri, ❤️ = ő kinek adná.</p>
+        <div class="table-wrap"><table id="voter-table" class="grid-table"></table></div>
+      </div>
+    </div>
+
+    <div data-panel="scores" hidden>
+      <div class="panel">
+        <h2>Ki tippelt a legjobban?</h2>
+        <p id="scores-note" class="muted small-text"></p>
+        <ol id="scores" class="scores"></ol>
+      </div>
+    </div>
+
+    <div data-panel="access" hidden>
+      <div class="panel">
+        <h2>Beengedés</h2>
+        <form id="grant-form" class="grant-form" autocomplete="off">
+          <input name="userId" inputmode="numeric" placeholder="Discord azonosító (pl. 123456789012345678)" required>
+          <button type="submit">Beengedem</button>
+        </form>
+        <p class="muted small-text">Akik belépni próbáltak jog nélkül, lent vannak: egy kattintással beengedheted őket.</p>
+      </div>
+      <div class="panel">
+        <h2>Belépni próbáltak</h2>
+        <ul id="refused" class="people"></ul>
+      </div>
+      <div class="panel">
+        <h2>Szavazhatnak</h2>
+        <ul id="granted" class="people"></ul>
+      </div>
+    </div>
+  </section>
+
+  <footer id="site-footer" class="site-footer" hidden></footer>
+  <p class="back-link"><a href="https://yagi.hu">← yagi.hu</a></p>
+</main>
+</body>
+</html>
