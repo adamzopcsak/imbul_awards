@@ -412,8 +412,8 @@ class OpeningTests(ServerTest):
         self.open_now()
         response, body = self.request("GET", "/api/reveal")
         self.assertEqual(response.status, 200)
-        self.assertEqual((body["name"], body["url"], body["host"]),
-                         ("Imbul Awards", "https://imbulawards.yagi.hu", "imbulawards.yagi.hu"))
+        self.assertEqual((body["icon"], body["name"], body["url"], body["host"]),
+                         ("🏆", "Imbul Awards", "https://imbulawards.yagi.hu", "imbulawards.yagi.hu"))
 
     def test_members_get_in_by_themselves_from_the_opening(self):
         self.guild_members = {FRIEND}

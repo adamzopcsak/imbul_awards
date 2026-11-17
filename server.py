@@ -775,11 +775,11 @@ class Handler(BaseHTTPRequestHandler):
         self._json(HTTPStatus.OK, {**self.app.person(user_id), "isAdmin": self.app.is_admin(user_id)})
 
     def _reveal(self):
-        """For the yagi.hu hub (proxied there as /hamarosan.json): the name and link of its "Imbul ******" tile, but
+        """For the yagi.hu hub (proxied there as /hamarosan.json): the icon, name and link of its "Imbul ******" tile, but
         only from opensAt on. Until then 404, so nothing about it is public before the reveal."""
         if not self.app.ballot.opened():
             return self._error(HTTPStatus.NOT_FOUND, "Még nem.")
-        self._json(HTTPStatus.OK, {"name": "Imbul Awards", "url": self.app.config.public_url,
+        self._json(HTTPStatus.OK, {"icon": "🏆", "name": "Imbul Awards", "url": self.app.config.public_url,
                                    "host": urllib.parse.urlsplit(self.app.config.public_url).netloc,
                                    "description": "A The Game Awards 2026, Imbul módra: szerinted ki nyer, és te kinek adnád?"})
 
