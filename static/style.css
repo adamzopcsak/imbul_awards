@@ -432,8 +432,9 @@ button.revoke:hover { color: var(--red); border-color: var(--red); filter: none;
 .mine-tag {
   align-self: flex-start;
   margin-top: 4px;
-  padding: .05rem .4rem;
-  border-radius: 999px;
+  padding: .12rem .45rem;
+  border-radius: 8px;
+  line-height: 1.3;
   font-size: .68rem;
   font-weight: 700;
   color: var(--kind);
@@ -489,10 +490,32 @@ button.revoke:hover { color: var(--red); border-color: var(--red); filter: none;
   box-shadow: 0 4px 12px rgb(0 0 0 / .4);
 }
 .mine-tag.hit { color: var(--real); border-color: var(--real); }
-.legend { margin-top: 16px; text-align: center; font-size: .8rem; color: var(--muted); line-height: 1.7; }
-.legend-imbul, .legend-real { font-weight: 700; padding: .05rem .45rem; border-radius: 999px; white-space: nowrap; }
-.legend-imbul { background: var(--accent); color: var(--on-accent); }
-.legend-real { background: var(--real); color: #062a27; }
+.legend {
+  list-style: none;
+  margin: 18px 0 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 10px 22px;
+  font-size: .8rem;
+  color: var(--muted);
+}
+.legend li { display: flex; align-items: center; gap: 8px; }
+/* Same as the badges on the pictures (.ribbon, .real-badge) */
+.legend-badge {
+  white-space: nowrap;
+  padding: .2rem .55rem;
+  border-radius: 999px;
+  font-size: .72rem;
+  font-weight: 800;
+  line-height: 1.3;
+}
+.legend-badge.imbul { background: var(--accent); color: var(--on-accent); }
+.legend-badge.real { background: var(--real); color: #062a27; }
+@media (max-width: 640px) {
+  .legend { flex-direction: column; align-items: flex-start; width: fit-content; margin-inline: auto; }
+}
 td.real { color: var(--real); font-weight: 600; }
 .real-select { max-width: 220px; font-size: .85rem; }
 .reveal-table td.has-real .real-select { border-color: var(--real); color: var(--real); }

@@ -209,11 +209,13 @@ function resultsPage(index) {
       : "Az Imbul eredménye a gála alatt derül ki: amint kint van, itt színesben látod."));
 }
 
+// The key under the cards: the same badges as on the pictures, each with what it means
 function legend() {
-  return h("p", { class: "legend" },
-    h("span", { class: "legend-real" }, "⭐ A gálán nyert"), " a The Game Awards valódi díjazottja · ",
-    h("span", { class: "legend-imbul" }, "🔮 Imbul tippje"), " erre tippeltetek a legtöbben · ",
-    h("span", { class: "legend-imbul" }, "🏆 Imbul-díj"), " ti ennek adtátok a legtöbben");
+  const item = (cls, badge, text) => h("li", {}, h("span", { class: `legend-badge ${cls}` }, badge), h("span", {}, text));
+  return h("ul", { class: "legend" },
+    item("real", "⭐ A gálán nyert", "a The Game Awards valódi díjazottja"),
+    item("imbul", "🔮 Imbul tippje", "erre tippeltetek a legtöbben"),
+    item("imbul", "🏆 Imbul-díj", "ti ennek adtátok a legtöbben"));
 }
 
 function categoryPage(index) {
