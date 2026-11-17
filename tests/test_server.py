@@ -8,6 +8,7 @@ import tempfile
 import threading
 import unittest
 import urllib.parse
+from datetime import timedelta, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -423,6 +424,14 @@ class ImageTests(unittest.TestCase):
     def test_pictures_are_allowed_by_the_page_policy(self):
         policy = server.SECURITY_HEADERS["Content-Security-Policy"]
         self.assertIn("https://upload.wikimedia.org", policy)
+
+
+class WelcomePageTests(unittest.TestCase):
+    def test_deadline_on_the_welcome_page_is_the_real_one(self):
+        page = (server.STATIC_DIR / "index.html").read_text(encoding="utf-8")
+        closes = server.Ballot().closes_at.astimezone(timezone(timedelta(hours=1)))  # Budapest in December
+        self.assertEqual((closes.year, closes.month, closes.day, closes.hour, closes.minute), (2026, 12, 9, 23, 59))
+        self.assertIn("2026. december 9-én 23:59-ig", page)
 
 
 class NomineesFileTests(unittest.TestCase):
