@@ -19,7 +19,9 @@ Admin only:
   GET    /api/admin/summary         every vote, the totals, the winners and the guessing leaderboard
   PUT    /api/admin/winners         {"category", "nominee": index or null}: the real winner
   GET    /api/admin/access          who may vote, and who tried to log in without access
-  POST   /api/admin/access          {"userId", "allowed": true | false}
+  POST   /api/admin/access          {"userId", "allowed": true | false}: let in / give back, or take away
+  POST   /api/admin/access/everyone {"allowed": true}: every member of the Discord server gets in at their login;
+                                    {"allowed": false}: nobody but the admins (as on Imbul Stats)
 
 Configuration (environment, on the server in /etc/imbul-awards.env):
   AWARDS_PUBLIC_URL        https://imbulawards.yagi.hu (the Discord redirect is <this>/auth/callback)
@@ -71,6 +73,9 @@ STATIC_FILES = {
 DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 DISCORD_TOKEN_URL = "https://discord.com/api/v10/oauth2/token"
 DISCORD_ME_URL = "https://discord.com/api/v10/users/@me"
+DISCORD_GUILDS_URL = "https://discord.com/api/v10/users/@me/guilds"
+DEFAULT_GUILD_ID = "368820263510605835"  # Imbul a Bakterház
+EVERYONE = "everyone"  # granted_by of those let in as members of the server
 
 SESSION_COOKIE = "imbul_awards"
 STATE_COOKIE = "imbul_awards_state"
@@ -106,10 +111,20 @@ CREATE TABLE IF NOT EXISTS access (
     granted_at TEXT NOT NULL,
     granted_by TEXT NOT NULL
 );
+-- Taken away on the admin page: they stay on the access list, to be given back one by one (as on Imbul Stats)
+CREATE TABLE IF NOT EXISTS revoked (
+    user_id    TEXT PRIMARY KEY,
+    revoked_at TEXT NOT NULL,
+    revoked_by TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS refused (
     user_id    TEXT PRIMARY KEY,
     last_at    TEXT NOT NULL,
     attempts   INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS votes (
     user_id    TEXT NOT NULL,
@@ -141,6 +156,8 @@ class Config:
         self.client_id = env.get("DISCORD_CLIENT_ID", "")
         self.client_secret = env.get("DISCORD_CLIENT_SECRET", "")
         self.admins = parse_ids(env.get("AWARDS_ADMIN_USERS"))
+        # "Everyone on the server" lets in the members of this Discord server (Imbul a Bakterház by default)
+        self.guild_id = env.get("AWARDS_GUILD_ID") or DEFAULT_GUILD_ID
         self.session_secret = env.get("AWARDS_SESSION_SECRET", "")
         self.secure = self.public_url.startswith("https://")
         # The dev login skips Discord entirely, so it never runs on a real (https) site
@@ -254,6 +271,9 @@ class Store:
     def users(self):
         return {row["id"]: row for row in self._read("SELECT * FROM users")}
 
+    def touch(self, user_id):
+        self._write(("UPDATE users SET last_seen = ? WHERE id = ?", (now_iso(), user_id)))
+
     def granted(self):
         return {row["user_id"]: row for row in self._read("SELECT * FROM access")}
 
@@ -264,16 +284,53 @@ class Store:
         self._write(("INSERT INTO refused (user_id, last_at, attempts) VALUES (?, ?, 1) ON CONFLICT(user_id) DO UPDATE "
                      "SET last_at = excluded.last_at, attempts = attempts + 1", (user_id, now_iso())))
 
-    def set_access(self, user_id, allowed, by):
-        if allowed:
-            self._write(("INSERT OR IGNORE INTO access (user_id, granted_at, granted_by) VALUES (?, ?, ?)",
-                         (user_id, now_iso(), by)),
-                        ("DELETE FROM refused WHERE user_id = ?", (user_id,)))
-        else:
-            self._write(("DELETE FROM access WHERE user_id = ?", (user_id,)))
+    def revoked(self):
+        return {row["user_id"]: row for row in self._read("SELECT * FROM revoked")}
+
+    def grant(self, user_id, by):
+        """Gives access (or gives it back, if it was taken away)."""
+        self._write(("INSERT OR IGNORE INTO access (user_id, granted_at, granted_by) VALUES (?, ?, ?)",
+                     (user_id, now_iso(), by)),
+                    ("DELETE FROM revoked WHERE user_id = ?", (user_id,)),
+                    ("DELETE FROM refused WHERE user_id = ?", (user_id,)))
+
+    def revoke(self, user_ids, by):
+        """Takes access away; they stay on the list, to be given back one by one."""
+        stamp = now_iso()
+        self._write(*[("INSERT OR IGNORE INTO revoked (user_id, revoked_at, revoked_by) VALUES (?, ?, ?)",
+                       (user_id, stamp, by)) for user_id in user_ids])
 
     def is_granted(self, user_id):
-        return bool(self._read("SELECT 1 FROM access WHERE user_id = ?", (user_id,)))
+        return bool(self._read("SELECT 1 FROM access WHERE user_id = ? AND user_id NOT IN (SELECT user_id FROM revoked)",
+                               (user_id,)))
+
+    def is_revoked(self, user_id):
+        return bool(self._read("SELECT 1 FROM revoked WHERE user_id = ?", (user_id,)))
+
+    # --- "Everyone on the server"
+
+    def everyone(self):
+        return any(row["value"] == "1" for row in self._read("SELECT value FROM settings WHERE key = 'everyone'"))
+
+    def grant_everyone(self, by):
+        """From now on every member of the server gets in at their Discord login; those taken away get it back.
+        Returns how many got it back."""
+        given_back = len(self.revoked())
+        self._write(("INSERT INTO settings (key, value) VALUES ('everyone', '1') ON CONFLICT(key) DO UPDATE "
+                     "SET value = excluded.value", ()),
+                    ("INSERT INTO settings (key, value) VALUES ('everyone_by', ?) ON CONFLICT(key) DO UPDATE "
+                     "SET value = excluded.value", (f"{by} {now_iso()}",)),
+                    ("DELETE FROM revoked", ()))
+        return given_back
+
+    def revoke_everyone(self, by, admins):
+        """Nobody but the admins gets in: the server's members no longer get in by themselves, and everyone given
+        access is taken away (they stay on the list). Returns how many lost it."""
+        ids = [uid for uid in self.granted() if uid not in admins and uid not in self.revoked()]
+        self._write(("INSERT INTO settings (key, value) VALUES ('everyone', '0') ON CONFLICT(key) DO UPDATE "
+                     "SET value = excluded.value", ()))
+        self.revoke(ids, by)
+        return len(ids)
 
     # --- Votes
 
@@ -331,8 +388,9 @@ class Signer:
         return data
 
 
-def discord_user(config, code):
-    """Exchanges the OAuth code for a token and returns the Discord user it belongs to (tests replace this)."""
+def discord_user(config, code, with_guilds=False):
+    """Exchanges the OAuth code for a token and returns the Discord user it belongs to (tests replace this). With
+    `with_guilds` (the "guilds" scope was asked for), the user also gets "guild_ids": the ids of their servers."""
     headers = {"User-Agent": "imbul-awards/1.0", "Accept": "application/json"}
     body = urllib.parse.urlencode({
         "client_id": config.client_id,
@@ -347,7 +405,16 @@ def discord_user(config, code):
         token = json.load(response)["access_token"]
     request = urllib.request.Request(DISCORD_ME_URL, headers={**headers, "Authorization": f"Bearer {token}"})
     with urllib.request.urlopen(request, timeout=15) as response:
-        return json.load(response)
+        me = json.load(response)
+    if with_guilds:
+        # Only used to see whether they are on the server; the list is not stored
+        request = urllib.request.Request(DISCORD_GUILDS_URL, headers={**headers, "Authorization": f"Bearer {token}"})
+        try:
+            with urllib.request.urlopen(request, timeout=15) as response:
+                me["guild_ids"] = [str(guild.get("id")) for guild in json.load(response)]
+        except (urllib.error.URLError, OSError, ValueError):
+            me["guild_ids"] = []  # the scope was refused or Discord failed: treated as not a member
+    return me
 
 
 def clean_user(me):
@@ -419,15 +486,39 @@ class App:
         }
 
     def access_list(self):
+        """For the admin page, as on Imbul Stats: everyone who may vote or had access taken away (the most recent
+        visitor first, those who never came last), whether everyone on the server gets in, and the refused logins."""
         users = self.store.users()
         granted = self.store.granted()
+        revoked = self.store.revoked()
+
+        def by_name(by):
+            if by == EVERYONE:
+                return "a szerver tagjaként"
+            return self.person(by, users)["name"]
+
+        people = []
+        for uid in set(granted) | set(self.config.admins):
+            given, taken = granted.get(uid), revoked.get(uid)
+            user = users.get(uid)
+            people.append({
+                **self.person(uid, users),
+                "isAdmin": uid in self.config.admins,
+                "lastSeen": user["last_seen"] if user else None,
+                "granted": given and uid not in self.config.admins and {"at": given["granted_at"],
+                                                                        "by": by_name(given["granted_by"])},
+                "revoked": taken and {"at": taken["revoked_at"], "by": by_name(taken["revoked_by"])},
+            })
+        seen = sorted((p for p in people if p["lastSeen"]), key=lambda p: p["lastSeen"], reverse=True)
+        people = seen + sorted((p for p in people if not p["lastSeen"]), key=lambda p: p["name"].lower())
         refused = self.store.refused()
         return {
-            "admins": [self.person(uid, users) for uid in sorted(self.config.admins)],
-            "granted": sorted(({**self.person(uid, users), "grantedAt": row["granted_at"]} for uid, row in granted.items()),
-                              key=lambda p: p["name"].lower()),
+            "everyone": self.store.everyone(),
+            "people": people,
+            "allowedNow": sum(1 for p in people if not p["revoked"]),
             "refused": sorted(({**self.person(uid, users), "lastAt": row["last_at"], "attempts": row["attempts"]}
-                               for uid, row in refused.items() if uid not in granted and uid not in self.config.admins),
+                               for uid, row in refused.items()
+                               if (uid not in granted or uid in revoked) and uid not in self.config.admins),
                               key=lambda p: p["lastAt"], reverse=True),
         }
 
@@ -570,8 +661,10 @@ class Handler(BaseHTTPRequestHandler):
         if not (config.client_id and config.client_secret):
             return self._redirect(PREFIX + "/?hiba=beallitas")
         state = secrets.token_urlsafe(24)
+        # While everyone on the server may vote, Discord is also asked which servers they are in
+        scope = "identify guilds" if self.app.store.everyone() else "identify"
         query = urllib.parse.urlencode({"client_id": config.client_id, "response_type": "code",
-                                        "redirect_uri": config.redirect_uri, "scope": "identify",
+                                        "redirect_uri": config.redirect_uri, "scope": scope,
                                         "state": state, "prompt": "none"})
         self._redirect(f"{DISCORD_AUTHORIZE_URL}?{query}",
                        cookies=[self._cookie(STATE_COOKIE, self.app.signer.dumps({"s": state}, STATE_SECONDS), STATE_SECONDS)])
@@ -584,10 +677,11 @@ class Handler(BaseHTTPRequestHandler):
         if "error" in query or not query.get("code") or not saved or not hmac.compare_digest(saved.get("s", ""), state):
             return self._redirect(PREFIX + "/?hiba=sikertelen", cookies=[clear_state])
         try:
-            user = clean_user(self.discord_user(self.app.config, query["code"]))
+            me = self.discord_user(self.app.config, query["code"], self.app.store.everyone())
+            user = clean_user(me)
         except (urllib.error.URLError, OSError, ValueError, KeyError):
             return self._redirect(PREFIX + "/?hiba=sikertelen", cookies=[clear_state])
-        self._finish_login(user, [clear_state])
+        self._finish_login(user, [clear_state], me.get("guild_ids") or [])
 
     def _dev_login(self):
         if not self.app.config.dev_login:
@@ -597,10 +691,15 @@ class Handler(BaseHTTPRequestHandler):
             user = clean_user({"id": query.get("id"), "username": query.get("name"), "global_name": query.get("name")})
         except ValueError:
             return self._error(HTTPStatus.BAD_REQUEST, "id: Discord azonosító kell")
-        self._finish_login(user, [])
+        # &tag=1: as if they were on the server
+        self._finish_login(user, [], [self.app.config.guild_id] if query.get("tag") == "1" else [])
 
-    def _finish_login(self, user, cookies):
-        self.app.store.remember_user(user)
+    def _finish_login(self, user, cookies, guild_ids=()):
+        store = self.app.store
+        store.remember_user(user)
+        if (not self.app.may_vote(user["id"]) and store.everyone() and self.app.config.guild_id in guild_ids
+                and not store.is_revoked(user["id"])):
+            store.grant(user["id"], EVERYONE)  # on the server while everyone may vote: in, and on the list
         if not self.app.may_vote(user["id"]):
             self.app.store.note_refused(user["id"])
             return self._redirect(PREFIX + "/?hiba=nincs-jog", cookies=[*cookies, self._cookie(SESSION_COOKIE, "", 0)])
@@ -611,6 +710,7 @@ class Handler(BaseHTTPRequestHandler):
         user_id = self._voter()
         if user_id is None:
             return
+        self.app.store.touch(user_id)  # "Utoljára" on the admin page's access list
         self._json(HTTPStatus.OK, {**self.app.person(user_id), "isAdmin": self.app.is_admin(user_id)})
 
     def _ballot(self):
@@ -643,6 +743,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._write(self._logout)
         if path == PREFIX + "/api/admin/access":
             return self._write(self._set_access)
+        if path == PREFIX + "/api/admin/access/everyone":
+            return self._write(self._set_everyone)
         self._error(HTTPStatus.NOT_FOUND, "Nincs ilyen oldal.")
 
     def do_PUT(self):
@@ -690,8 +792,25 @@ class Handler(BaseHTTPRequestHandler):
         user_id = user_id.strip()
         if user_id in self.app.config.admins and not body["allowed"]:
             raise ValidationError("Az admin jogát itt nem lehet elvenni.")
-        self.app.store.set_access(user_id, body["allowed"], admin_id)
+        if body["allowed"]:
+            self.app.store.grant(user_id, admin_id)
+        else:
+            self.app.store.revoke([user_id], admin_id)
         self._json(HTTPStatus.OK, self.app.access_list())
+
+    def _set_everyone(self):
+        """{"allowed": true}: every member of the server gets in; false: nobody but the admins (as on Imbul Stats)."""
+        admin_id = self._admin()
+        if admin_id is None:
+            return
+        body = self._body()
+        if not isinstance(body.get("allowed"), bool):
+            raise ValidationError("allowed: true vagy false")
+        if body["allowed"]:
+            count = self.app.store.grant_everyone(admin_id)
+        else:
+            count = self.app.store.revoke_everyone(admin_id, self.app.config.admins)
+        self._json(HTTPStatus.OK, {**self.app.access_list(), "changed": count})
 
 
 def make_server(host, port, app):

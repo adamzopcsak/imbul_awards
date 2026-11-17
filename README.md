@@ -29,6 +29,17 @@ Everyone else is refused ("még nincs jogod szavazni") and listed under **Belép
 their Discord name and id, so one click lets them in. Access is checked on every request, so taking it away works at
 once, even for someone who is logged in. At launch nobody but the admin has access.
 
+As on Imbul Stats, **Admin → Hozzáférés** has two buttons:
+
+- **Jogosultság adása mindenkinek a szerveren:** from then on every member of the Imbul a Bakterház server
+  (`AWARDS_GUILD_ID`, that server by default) gets in. Unlike Imbul Stats, this app has no member list, so it is
+  checked at the login: while this is on, the Discord login also asks for the `guilds` scope (the user sees "which
+  servers you are in"), and a member is let in and put on the access list ("a szerver tagjaként"). The server list is
+  not stored. Those taken away earlier get access back.
+- **Jogosultság megvonása mindenkitől:** turns that off and takes access away from everyone but the admins. They stay
+  on the list and can be given back one by one (**Visszaadás**); one taken away (**Elvétel**) stays out even while
+  everyone on the server may vote.
+
 The yagi.hu hub shows the project as **Imbul ******** ("Hamarosan", no link). The real tile, linking here, is in the
 hub's admin-only `private/tiles.js`.
 

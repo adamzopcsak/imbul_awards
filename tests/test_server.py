@@ -37,7 +37,16 @@ class ServerTest(unittest.TestCase):
         self.httpd = server.make_server("127.0.0.1", 0, self.app)
         self.port = self.httpd.server_address[1]
         self.discord_users = {}
-        self.httpd.RequestHandlerClass.discord_user = staticmethod(lambda config, code: self.discord_users[code])
+        self.guild_members = set()  # who the fake Discord says is on the Imbul server
+        self.asked_guilds = []
+
+        def fake_discord(config, code, with_guilds=False):
+            me = dict(self.discord_users[code])
+            self.asked_guilds.append(with_guilds)
+            if with_guilds:
+                me["guild_ids"] = ["111111111111111111"] + ([config.guild_id] if me["id"] in self.guild_members else [])
+            return me
+        self.httpd.RequestHandlerClass.discord_user = staticmethod(fake_discord)
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
     def tearDown(self):
@@ -73,7 +82,7 @@ class ServerTest(unittest.TestCase):
             jar[name] = value
         return jar
 
-    def login(self, user_id, name="Valaki"):
+    def login(self, user_id, name="Valaki", scope="identify"):
         """The whole Discord flow; returns the session cookie header, or None if refused (and the redirect)."""
         response, _ = self.request("GET", "/login")
         self.assertEqual(response.status, 302)
@@ -81,7 +90,7 @@ class ServerTest(unittest.TestCase):
         self.assertEqual(f"{location.scheme}://{location.netloc}{location.path}", server.DISCORD_AUTHORIZE_URL)
         params = dict(urllib.parse.parse_qsl(location.query))
         self.assertEqual(params["redirect_uri"], "https://imbulawards.yagi.hu/auth/callback")
-        self.assertEqual(params["scope"], "identify")
+        self.assertEqual(params["scope"], scope)
         state_cookie = self.set_cookies(response)[server.STATE_COOKIE]
         code = f"code-{user_id}"
         self.discord_users[code] = {"id": user_id, "username": name.lower(), "global_name": name,
@@ -130,7 +139,8 @@ class LoginTests(ServerTest):
         admin, _ = self.login(ADMIN)
         _, access = self.request("GET", "/api/admin/access", cookie=admin)
         self.assertEqual([(p["id"], p["name"], p["attempts"]) for p in access["refused"]], [(STRANGER, "Idegen", 2)])
-        self.assertEqual(access["granted"], [])
+        self.assertEqual([p["id"] for p in access["people"]], [ADMIN])
+        self.assertFalse(access["everyone"])
 
     def test_wrong_state_is_refused(self):
         self.discord_users["c"] = {"id": ADMIN, "username": "yagi"}
@@ -165,15 +175,84 @@ class AccessTests(ServerTest):
         response, access = self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": True},
                                         cookie=admin)
         self.assertEqual(response.status, 200)
-        self.assertEqual([p["id"] for p in access["granted"]], [FRIEND])
+        self.assertEqual(sorted(p["id"] for p in access["people"]), [ADMIN, FRIEND])
         self.assertEqual(access["refused"], [])
         friend, _ = self.login(FRIEND, "Haver")
         response, me = self.request("GET", "/api/me", cookie=friend)
         self.assertEqual(response.status, 200)
         self.assertFalse(me["isAdmin"])
         # Taking it back works at once, even with a live session
-        self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": False}, cookie=admin)
+        _, access = self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": False}, cookie=admin)
         response, _ = self.request("GET", "/api/ballot", cookie=friend)
+        self.assertEqual(response.status, 403)
+        # They stay on the list, marked as taken away, and can be given back
+        friend_row = next(p for p in access["people"] if p["id"] == FRIEND)
+        self.assertEqual(friend_row["revoked"]["by"], "Valaki")
+        self.assertEqual(access["allowedNow"], 1)
+        self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": True}, cookie=admin)
+        response, _ = self.request("GET", "/api/ballot", cookie=friend)
+        self.assertEqual(response.status, 200)
+
+    def everyone(self, admin, allowed):
+        response, access = self.request("POST", "/api/admin/access/everyone", body={"allowed": allowed}, cookie=admin)
+        self.assertEqual(response.status, 200)
+        return access
+
+    def test_everyone_on_the_server_gets_in(self):
+        admin, _ = self.login(ADMIN)
+        self.guild_members = {FRIEND}
+        # Off: Discord is not even asked about servers, and a member is refused like anyone
+        self.assertIsNone(self.login(FRIEND)[0])
+        self.assertEqual(self.asked_guilds[-1], False)
+        access = self.everyone(admin, True)
+        self.assertTrue(access["everyone"])
+        friend, location = self.login(FRIEND, "Haver", scope="identify guilds")
+        self.assertEqual(location, "/")
+        response, _ = self.request("GET", "/api/ballot", cookie=friend)
+        self.assertEqual(response.status, 200)
+        # Not on the server: still refused
+        self.assertIsNone(self.login(STRANGER, scope="identify guilds")[0])
+        _, access = self.request("GET", "/api/admin/access", cookie=admin)
+        friend_row = next(p for p in access["people"] if p["id"] == FRIEND)
+        self.assertEqual(friend_row["granted"]["by"], "a szerver tagjaként")
+        self.assertEqual([p["id"] for p in access["refused"]], [STRANGER])
+
+    def test_taken_away_one_stays_out_while_everyone_may_vote(self):
+        admin, _ = self.login(ADMIN)
+        self.guild_members = {FRIEND}
+        self.everyone(admin, True)
+        friend, _ = self.login(FRIEND, scope="identify guilds")
+        self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": False}, cookie=admin)
+        self.assertIsNone(self.login(FRIEND, scope="identify guilds")[0])
+
+    def test_nobody_but_the_admins(self):
+        admin, _ = self.login(ADMIN)
+        self.guild_members = {FRIEND}
+        self.request("POST", "/api/admin/access", body={"userId": STRANGER, "allowed": True}, cookie=admin)
+        self.everyone(admin, True)
+        friend, _ = self.login(FRIEND, scope="identify guilds")
+        stranger, _ = self.login(STRANGER, scope="identify guilds")
+        access = self.everyone(admin, False)
+        self.assertFalse(access["everyone"])
+        self.assertEqual(access["changed"], 2)
+        self.assertEqual(access["allowedNow"], 1)  # the admin
+        for cookie in (friend, stranger):
+            response, _ = self.request("GET", "/api/ballot", cookie=cookie)
+            self.assertEqual(response.status, 403)
+        response, _ = self.request("GET", "/api/ballot", cookie=admin)
+        self.assertEqual(response.status, 200)
+        self.assertIsNone(self.login(FRIEND)[0])  # and the server no longer lets them in
+        # Everyone again: those taken away get it back
+        access = self.everyone(admin, True)
+        self.assertEqual(access["changed"], 2)
+        response, _ = self.request("GET", "/api/ballot", cookie=friend)
+        self.assertEqual(response.status, 200)
+
+    def test_everyone_switch_is_admin_only(self):
+        admin, _ = self.login(ADMIN)
+        self.request("POST", "/api/admin/access", body={"userId": FRIEND, "allowed": True}, cookie=admin)
+        friend, _ = self.login(FRIEND)
+        response, _ = self.request("POST", "/api/admin/access/everyone", body={"allowed": True}, cookie=friend)
         self.assertEqual(response.status, 403)
 
     def test_admin_cannot_be_locked_out(self):

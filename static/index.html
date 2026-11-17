@@ -94,20 +94,37 @@
 
     <div data-panel="access" hidden>
       <div class="panel">
-        <h2>Beengedés</h2>
+        <h2>Új ember felvétele</h2>
+        <p id="access-result" class="access-result" role="status" hidden></p>
+        <p id="everyone-state" class="everyone-state"></p>
+        <div class="access-bulk">
+          <button type="button" id="grant-everyone">Jogosultság adása mindenkinek a szerveren</button>
+          <button type="button" id="revoke-everyone" class="danger">Jogosultság megvonása mindenkitől</button>
+        </div>
+        <p class="muted small-text">A „mindenkinek” után az Imbul a Bakterház szerver minden tagja beléphet a Discord-fiókjával: a
+          belépéskor a Discord azt is megmutatja, hogy rajta van-e a szerveren. Aki belép, felkerül a lenti listára. A
+          megvonás után mindenki a listában marad, és egyenként visszaadható a jog. Az adminoké megmarad.</p>
         <form id="grant-form" class="grant-form" autocomplete="off">
-          <input name="userId" inputmode="numeric" placeholder="Discord azonosító (pl. 123456789012345678)" required>
-          <button type="submit">Beengedem</button>
+          <label for="grant-id">Discord ID alapján</label>
+          <div class="grant-row">
+            <input id="grant-id" name="userId" inputmode="numeric" pattern="[0-9]{15,20}" placeholder="pl. 123456789012345678" required>
+            <button type="submit">Hozzáadás</button>
+          </div>
         </form>
-        <p class="muted small-text">Akik belépni próbáltak jog nélkül, lent vannak: egy kattintással beengedheted őket.</p>
+        <p class="muted small-text">Ha nem tagja a szervernek, vagy a „mindenkinek” nélkül is be akarod engedni. Az ID-t ő tudja kimásolni:
+          Discordban Beállítások → Haladó → Fejlesztői mód, utána jobb klikk a saját nevére → Felhasználói azonosító másolása.</p>
       </div>
       <div class="panel">
         <h2>Belépni próbáltak</h2>
+        <p class="muted small-text">Akik jog nélkül próbáltak belépni: egy kattintással beengedheted őket.</p>
         <ul id="refused" class="people"></ul>
       </div>
       <div class="panel">
-        <h2>Szavazhatnak</h2>
-        <ul id="granted" class="people"></ul>
+        <h2>Hozzáférés</h2>
+        <p id="access-summary" class="muted small-text"></p>
+        <div class="table-wrap"><table id="access-table" class="access-table"></table></div>
+        <p class="muted small-text">Az elvétel azonnal érvényes: aki épp bent van, a következő kattintásánál kikerül, és újra
+          belépni sem tud, akkor sem, ha mindenki beléphet. A visszaadással újra szavazhat. Az adminok jogát nem lehet elvenni.</p>
       </div>
     </div>
   </section>

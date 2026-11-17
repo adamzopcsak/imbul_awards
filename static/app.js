@@ -442,18 +442,67 @@ function renderScores() {
       h("small", {}, ` · ❤️ ${s.agreed}`)))));
 }
 
+// Access, as on Imbul Stats: everyone or nobody at once, one by one by Discord id, the refused logins, and the list
+// of everyone with access (taken away ones stay on it, to be given back)
 function renderAccess() {
-  const { granted, refused, admins } = state.access;
-  const button = (label, userId, allowed, cls) => h("button", {
-    type: "button", class: cls, onclick: () => setAccess(userId, allowed),
-  }, label);
+  const { everyone, people, refused, allowedNow } = state.access;
+  const handle = (p) => `${p.username ? "@" + p.username + " · " : ""}${p.id}`;
+  const when = (iso) => dateTime.format(new Date(iso));
+  $("everyone-state").textContent = everyone
+    ? "✅ Most a szerver minden tagja beléphet."
+    : "🔒 Most csak az adminok és a listán szereplők léphetnek be.";
+  $("everyone-state").className = `everyone-state${everyone ? " on" : ""}`;
+  $("grant-everyone").disabled = everyone;
+
   $("refused").replaceChildren(...(refused.length ? refused.map((p) => h("li", {},
-    personEl(p, `${p.username ? "@" + p.username + " · " : ""}${p.id} · ${p.attempts}× · ${dateTime.format(new Date(p.lastAt))}`),
-    button("Beengedem", p.id, true, "small"))) : [h("li", { class: "muted" }, "Senki.")]));
-  $("granted").replaceChildren(
-    ...admins.map((p) => h("li", {}, personEl(p), h("span", { class: "badge" }, "admin"))),
-    ...granted.map((p) => h("li", {}, personEl(p, `${p.username ? "@" + p.username + " · " : ""}${p.id}`),
-      button("Jog elvétele", p.id, false, "secondary small"))));
+    personEl(p, `${handle(p)} · ${p.attempts}× · ${when(p.lastAt)}`),
+    h("button", { type: "button", class: "small", onclick: () => setAccess(p.id, true) }, "Beengedem")))
+    : [h("li", { class: "muted" }, "Senki.")]));
+
+  $("access-summary").textContent = `Akik szavazhatnak, az utoljára itt járt elöl. Összesen ${people.length}, ebből ${allowedNow} most is beléphet.`;
+  const rows = people.map((p) => {
+    const notes = [];
+    if (p.granted) notes.push(`Felvéve: ${when(p.granted.at)} · ${p.granted.by}`);
+    if (p.revoked) notes.push(`Elvéve: ${when(p.revoked.at)} · ${p.revoked.by}`);
+    let action = null;
+    if (p.isAdmin) action = null;
+    else if (p.revoked) action = h("button", { type: "button", class: "small", onclick: () => setAccess(p.id, true) }, "Visszaadás");
+    else action = h("button", {
+      type: "button",
+      class: "small secondary revoke",
+      onclick: () => { if (confirm(`Biztosan elveszed ${p.name} hozzáférését?`)) setAccess(p.id, false); },
+    }, "Elvétel");
+    return h("tr", { class: p.revoked ? "access-revoked" : "" },
+      h("td", {}, personEl(p, handle(p)),
+        p.isAdmin ? h("span", { class: "badge" }, "admin") : null,
+        ...notes.map((note) => h("div", { class: "access-note muted" }, note))),
+      h("td", { class: "muted" }, p.lastSeen ? when(p.lastSeen) : "Még nem járt itt"),
+      h("td", { class: "access-action" }, action));
+  });
+  $("access-table").replaceChildren(
+    h("thead", {}, h("tr", {}, h("th", {}, "Ki"), h("th", {}, "Utoljára"), h("th", {}, ""))),
+    h("tbody", {}, ...rows));
+}
+
+async function setEveryone(allowed) {
+  const question = allowed
+    ? "Biztosan jogosultságot adsz a szerver minden tagjának?"
+    : "Biztosan mindenkitől elveszed a jogosultságot? Csak az adminok tudnak majd belépni.";
+  if (!confirm(question)) return;
+  $("admin-error").textContent = "";
+  try {
+    const result = await api("api/admin/access/everyone", { method: "POST", body: { allowed } });
+    state.access = result;
+    renderAccess();
+    const message = allowed
+      ? `Mostantól a szerver minden tagja be tud lépni.${result.changed ? ` ${result.changed} ember visszakapta a jogát.` : ""}`
+      : `${result.changed} embertől vetted el a jogosultságot, most csak az adminok tudnak belépni.`;
+    $("access-result").textContent = message;
+    $("access-result").className = `access-result${allowed ? " ok" : ""}`;
+    $("access-result").hidden = false;
+  } catch (error) {
+    $("admin-error").textContent = error.message;
+  }
 }
 
 function renderAdmin() {
@@ -560,6 +609,8 @@ $("logout").addEventListener("click", async () => {
   await api("logout", { method: "POST", body: {} }).catch(() => null);
   location.href = location.pathname;
 });
+$("grant-everyone").addEventListener("click", () => setEveryone(true));
+$("revoke-everyone").addEventListener("click", () => setEveryone(false));
 $("grant-form").addEventListener("submit", async (event) => {
   event.preventDefault();
   const input = event.target.elements.userId;

@@ -58,7 +58,7 @@ button, .button {
   display: inline-block;
 }
 button:hover, .button:hover { filter: brightness(1.1); }
-button:disabled { cursor: default; filter: none; }
+button:disabled { cursor: default; filter: none; opacity: .45; }
 button.secondary { background: transparent; color: var(--fg); border-color: var(--border); }
 button.small { padding: .3rem .7rem; font-size: .85rem; }
 
@@ -316,8 +316,6 @@ select { color-scheme: dark; }
 .scores .score small { color: var(--pick); }
 .scores li::after { content: ""; display: block; clear: both; }
 
-.grant-form { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: .75rem; }
-.grant-form input { flex: 1 1 260px; }
 
 .site-footer { margin-top: 32px; color: var(--muted); font-size: .8rem; text-align: center; font-variant-numeric: tabular-nums; }
 .back-link { margin-top: 8px; text-align: center; font-size: .85rem; }
@@ -363,3 +361,22 @@ select { color-scheme: dark; }
 .modal-secondary { color: var(--fg); background: transparent; border: 1px solid var(--border); }
 @keyframes modal-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .modal-backdrop { animation: none; } }
+
+/* Admin → Hozzáférés, as on Imbul Stats */
+.everyone-state { margin-bottom: 12px; font-weight: 600; }
+.everyone-state.on { color: var(--green); }
+.access-bulk { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+button.danger { background: transparent; color: var(--red); border-color: var(--red); }
+button.danger:hover { background: color-mix(in srgb, var(--red) 15%, transparent); filter: none; }
+.access-result { margin-bottom: 12px; padding: .6rem .8rem; border-radius: 10px; border: 1px solid var(--border); }
+.access-result.ok { border-color: var(--green); color: var(--green); background: color-mix(in srgb, var(--green) 10%, transparent); }
+.grant-form { display: block; margin-top: 18px; }
+.grant-form label { display: block; font-size: .85rem; color: var(--muted); margin-bottom: .35rem; }
+.grant-row { display: flex; gap: .75rem; flex-wrap: wrap; margin-bottom: .5rem; }
+.grant-row input { flex: 1 1 240px; }
+.access-table td { vertical-align: top; }
+.access-table .person { margin-right: .5rem; }
+.access-note { font-size: .78rem; margin-top: 4px; }
+.access-action { text-align: right; white-space: nowrap; }
+tr.access-revoked .person { opacity: .5; }
+button.revoke:hover { color: var(--red); border-color: var(--red); filter: none; }
