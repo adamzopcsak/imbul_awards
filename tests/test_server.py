@@ -617,9 +617,13 @@ class ImageTests(unittest.TestCase):
                 "Saros": {"title": None, "url": None},
             }), encoding="utf-8")
             ballot = server.Ballot(server.NOMINEES_FILE, images)
-        goty = ballot.public()["categories"][0]["nominees"]
-        self.assertEqual(goty[2]["image"], "https://upload.wikimedia.org/wikipedia/en/4/46/GTA_VI.png")
-        self.assertIsNone(goty[0]["image"])
+        # A nominee without its own picture gets the one found for its name; its own one wins
+        self.assertEqual(ballot.image_of(["Grand Theft Auto VI", "Rockstar"]),
+                         "https://upload.wikimedia.org/wikipedia/en/4/46/GTA_VI.png")
+        self.assertIsNone(ballot.image_of(["007 First Light", "IO"]))
+        self.assertEqual(ballot.image_of(["Grand Theft Auto VI", "Rockstar", "img/2026/gta6.jpg"]), "img/2026/gta6.jpg")
+        self.assertEqual(ballot.image_of(["Grand Theft Auto VI", "Rockstar", "../server.py"]),
+                         "https://upload.wikimedia.org/wikipedia/en/4/46/GTA_VI.png")
         self.assertNotIn("Pragmata", ballot.images)
         self.assertNotIn("Saros", ballot.images)
 
@@ -653,6 +657,22 @@ class WelcomePageTests(unittest.TestCase):
         self.assertIn("2026. december 9-én 23:59-ig", page)
 
 
+class LocalPictureTests(ServerTest):
+    def test_pictures_are_served_and_kept(self):
+        response, body = self.request("GET", "/img/2026/gta6.jpg")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["Content-Type"], "image/jpeg")
+        self.assertIn("max-age", response.headers["Cache-Control"])
+        self.assertEqual(body[:2], bytes([0xFF, 0xD8]))  # a JPEG
+
+    def test_nothing_else_is_served_from_there(self):
+        for path in ("/img/2026/nope.jpg", "/img/2026/../../server.py", "/img/2026/gta6.png", "/img/x/gta6.jpg",
+                     "/img/2026/%2e%2e%2fserver.jpg"):
+            with self.subTest(path=path):
+                response, _ = self.request("GET", path)
+                self.assertEqual(response.status, 404)
+
+
 class NomineesFileTests(unittest.TestCase):
     def test_every_category_is_well_formed(self):
         data = json.loads(server.NOMINEES_FILE.read_text(encoding="utf-8"))
@@ -663,8 +683,11 @@ class NomineesFileTests(unittest.TestCase):
                 self.assertTrue(category["name"] and category["original"])
                 self.assertGreaterEqual(len(category["nominees"]), 5)
                 for nominee in category["nominees"]:
-                    self.assertEqual(len(nominee), 2)
+                    self.assertIn(len(nominee), (2, 3))
                     self.assertTrue(nominee[0])
+                    if len(nominee) == 3:  # The Game Awards' own picture, served from static/
+                        self.assertRegex(nominee[2], server.LOCAL_IMAGE)
+                        self.assertTrue((server.STATIC_DIR / nominee[2]).is_file(), nominee[2])
         server.Ballot()  # the deadline parses, with a time zone
         self.assertIsNotNone(server.Ballot().closes_at.tzinfo)
 

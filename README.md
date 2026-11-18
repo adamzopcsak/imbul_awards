@@ -107,13 +107,13 @@ nominee as `[name, studio or detail]`). Votes refer to a nominee by its position
 or remove nominees once voting has started (fixing a typo is fine). The 2026 list was announced on 2026-11-17; the
 sources are in the file.
 
-**Pictures:** `images.json` maps each nominee's name to a picture from its English Wikipedia article (cover art,
-poster or photo; for a user creation, the game it was made for). `scripts/fetch_images.py` finds them; run it again
-after changing the nominees (it only looks up the new names). Wrong matches are fixed in its `OVERRIDES`. The pictures
-are not copied into the repo: the page loads them from `upload.wikimedia.org` (allowed in the Content-Security-Policy,
-sent without a referrer). Four games Wikipedia has no picture for use their official Steam store image (`DIRECT` in the
-script, from `shared.akamai.steamstatic.com`); a landscape picture is shown whole over a blurred copy of itself. A
-nominee whose picture does not load gets its initials instead.
+**Pictures:** every nominee shows The Game Awards' own picture (the same as on thegameawards.com, square, including
+photos of the performers, creators, players and teams). `scripts/tga_<year>.txt` lists them (read off the site by hand:
+it sits behind a Cloudflare check, its picture host does not); `scripts/fetch_tga_images.py <year>` downloads them,
+shrinks them to 480x480 JPEGs into `static/img/<year>/` (about 50 KB each, served by this app and cached by browsers)
+and writes each one into the ballot as the nominee's third field. It needs Pillow (`python -m pip install pillow`),
+the app itself does not. A nominee without one falls back to `images.json` (`scripts/fetch_images.py`: Wikipedia,
+Wikimedia, a few Steam store images), and one whose picture does not load shows its initials.
 
 ## How it works
 

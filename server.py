@@ -74,6 +74,9 @@ def ballot_files():
 NOMINEES_FILE = ballot_files()[-1]  # the current year's
 IMAGES_FILE = APP_DIR / "images.json"
 # The nominees' pictures are shown straight from Wikimedia, a few from Steam's store (see scripts/fetch_images.py)
+# The Game Awards' own pictures, shrunk and served from static/img/<year>/ (scripts/fetch_tga_images.py); in a ballot
+# as the nominee's third field
+LOCAL_IMAGE = re.compile(r"img/[0-9]{4}/[a-z0-9_-]+\.jpg")
 IMAGE_URL = re.compile(r"https://(upload|thumb)\.wikimedia\.org/[A-Za-z0-9_./%()'!,~+-]+"
                        r"|https://shared\.akamai\.steamstatic\.com/store_item_assets/steam/apps/[0-9]+/[A-Za-z0-9_./-]+")
 VERSION_FILE = APP_DIR / "version.json"
@@ -241,6 +244,12 @@ class Ballot:
         if isinstance(nominee, bool) or not isinstance(nominee, int) or not 0 <= nominee < len(category["nominees"]):
             raise ValidationError("Nincs ilyen jelölt.")
 
+    def image_of(self, nominee):
+        """The nominee's own picture (The Game Awards', served here), else the one found for its name."""
+        if len(nominee) > 2 and isinstance(nominee[2], str) and LOCAL_IMAGE.fullmatch(nominee[2]):
+            return nominee[2]
+        return self.images.get(nominee[0])
+
     def public(self):
         return {
             "year": self.year,
@@ -250,7 +259,7 @@ class Ballot:
             "opensAt": self.opens_at and self.opens_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
             "closed": self.closed(),
             "categories": [{"id": c["id"], "name": c["name"], "original": c["original"],
-                            "nominees": [{"name": n[0], "detail": n[1], "image": self.images.get(n[0])}
+                            "nominees": [{"name": n[0], "detail": n[1], "image": self.image_of(n)}
                                          for n in c["nominees"]]}
                            for c in self.categories],
         }
@@ -764,6 +773,10 @@ class Handler(BaseHTTPRequestHandler):
             name, content_type = STATIC_FILES[path]
             self._send(HTTPStatus.OK, (STATIC_DIR / name).read_bytes(), content_type,
                        headers={"Cache-Control": "no-cache"})
+        elif LOCAL_IMAGE.fullmatch(path.lstrip("/")) and (STATIC_DIR / path.lstrip("/")).is_file():
+            # The nominees' pictures: they never change under the same name, so browsers may keep them
+            self._send(HTTPStatus.OK, (STATIC_DIR / path.lstrip("/")).read_bytes(), "image/jpeg",
+                       headers={"Cache-Control": "public, max-age=2592000"})
         elif path == PREFIX + "/version.json" and VERSION_FILE.is_file():
             self._send(HTTPStatus.OK, VERSION_FILE.read_bytes())
         elif path in routes:

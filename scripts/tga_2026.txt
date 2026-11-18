@@ -1,0 +1,115 @@
+# The Game Awards 2026 nominee pictures, as thegameawards.com/categories/* showed them on 2026-11-18:
+# name as TGA writes it | file under https://assets.thegameawards.com/2026/11/
+# scripts/fetch_tga_images.py downloads and shrinks them into static/img/2026/ and links them in ballots/2026.json.
+007 First Light|b9d57394-007_first_light.jpg
+Control Resonant|21d32aee-control_resonant.jpg
+Grand Theft Auto VI|5671c9cc-gta6.jpg
+Phantom Blade Zero|61063a23-phantom_blade_zero.jpg
+Resident Evil Requiem|f9d5ddf9-resident_evil_requiem.jpg
+The Legend of Zelda: Ocarina of Time|c0793816-zelda_ocarinaoftime.jpg
+Pragmata|d3b60446-pragamata.jpg
+The Blood of Dawnwalker|3fa54af1-the_blood_of_dawnwalker.jpg
+Mouse: P.I. For Hire|517f8a9e-mouse_pi_for_hire.jpg
+Ace Combat 8: Wings of Theve|f4ba04c5-ace_combat_8.png
+Mixtape|6afc58a8-mixtape.jpg
+Star Wars: Galactic Racer|e0c45790-star_wars_galactic_racer.jpg
+Angela Sant’Albano|c8cb86c3-tga26_bestperformance_angela_sant_albano.jpg
+Liam McIntyre|33aceba9-tga26_bestperformance_liam_mcintyre.jpg
+Manni L. Perez|9a6c42d0-manni_l_perez.jpg
+Patrick Gibson|8c323852-tga26_bestperformance_patrick_gibson.jpg
+Rahul Kohli|4990abd1-tga26_bestperformance_rahul_kohli.jpg
+Big Walk|f9695ebf-bigwalk.jpg
+Cairn|72219057-cairn.jpg
+Forever Ago|43d541f6-forever_ago.jpg
+Life is Strange: Reunion|98c8afb7-life_is_strange.jpg
+lily’s world XD|495c092b-lilys_world.jpg
+Assassin’s Creed Black Flag Resynced|478a1c08-assassins_creed.jpg
+Forza Horizon 6|655549a4-forza_horizon-6.jpg
+Gears of War: E-Day|df3ed8b4-gears_eday.jpg
+Marvel’s Wolverine|614174ec-marvel_wolverine.jpg
+Rhythm Heaven Groove|6a7488c1-rhythm_heaven_groove.jpg
+Arc Raiders|b936636d-arc_raiders.png
+Final Fantasy XIV|a70d1b69-final_fantasy_14.jpg
+Fortnite|c743d422-fortnite.jpg
+No Man’s Sky|ad38ce96-no_mans_sky.jpg
+The Witcher 3: Wild Hunt|2521a33b-the_witcher_3.jpg
+Crimson Desert|7d8ba7b5-crimson_desert.jpg
+Helldivers 2|806cfdfc-helldivers_2.jpg
+Warframe|d6c261e8-warframe.jpg
+Denshattack!|0c2884ea-deshattack.jpg
+Mewgenics|fbc5181a-mewgenics.jpg
+Mina the Hollower|bee57cc4-mina_the_hollower.jpg
+Dressmaker|97eb4625-dressmaker.jpg
+Esoteric Ebb|619e4643-esoteric_ebb.jpg
+Orbitals|0f39b672-orbitals.jpg
+Replaced|de54c2d1-replaced.jpg
+Silver Pines|4fbc698d-silver_pines.jpg
+Arknights: Endfield|9b0023fc-arknights_endfield.jpg
+Monster Hunter Outlanders|c9b2debe-mho-tga-voting.png
+Neverness to Everness|a173b7c8-netherness_to_everness.jpg
+Pokémon Champions|9a6245db-pokemon_champions.jpg
+Where Winds Meet|f7db1878-where_winds_meet.jpg
+Forefront|afe27419-forefront.jpg
+Into the Radius 2|c2239f00-into_the_radius.jpg
+Little Nightmares VR: Altered Echoes|406090d9-little_nightmares_vr.jpg
+Teenage Mutant Ninja Turtles: Empire City|95f87839-tmnt_empirecity.jpg
+Thief VR: Legacy of Shadow|62089551-thiefvr.jpg
+Onimusha: Way of the Sword|bcc5f70d-onimusha.jpg
+Saros|0f863916-saros.jpg
+Final Fantasy Resonance|cd30664a-final_fantasy_resonance.jpg
+Fire Emblem Fortune’s Weave|b5281b24-fire_emblem_fortunes_weave.jpg
+Monster Hunter Stories 3: Twisted Reflection|a1cd3b39-monster_hunter_stories_3.jpg
+Trails in the Sky 2nd Chapter|05e269eb-trails_in_the_sky_2nd_chapter.jpg
+2XKO|4c7e6286-2xko.jpg
+Avatar Legends: The Fighting Game|3926746c-avatar_legends.jpg
+Invincible VS|442a275c-invincible_vs.jpg
+Marvel Tōkon: Fighting Souls|be63a0db-marvel_tokon.jpg
+My Hero Academia: All’s Justice|f87fa82b-my_hero_academia.jpg
+Lego Batman: Legacy of the Dark Knight|f2fd6413-lego_batman.jpg
+Nintendo Switch Sports Resort|48b9b463-nintendo_switch_sports.jpg
+Pokémon Pokopia|67045a9f-pokemon_pokoipa.jpg
+Yoshi and the Mysterious Book|edd23760-yoshi_mysterious.jpg
+Planet Zoo 2|2b3402d7-planet_zoo_2.jpg
+Slay the Spire 2|e0314365-slay_the_spire_2.jpg
+Star Wars Zero Company|7a0b949d-star_wars_zero_company.jpg
+EA Sports FC 27|de75cf09-easports_fc27.jpg
+Screamer|3768e42e-screamer.jpg
+Call of Duty: Modern Warfare 4|943356a3-call_of_duty_mw4.jpg
+Marathon|b9079289-marathon.jpg
+Meccha Chameleon|46e509f9-mecha_chamellion.jpg
+Cyberpunk: Edgerunners 2|5eece593-cyberpunk_edgerunners.jpg
+Fallout (Season 2)|0b5653da-fallout_season2.jpg
+Mortal Kombat II|fc1d0ca0-mortal_kombat_2.jpg
+Resident Evil|b3549f46-resident_evil_movie.jpg
+The Super Mario Galaxy Movie|488b3aa3-super_mario_galaxy_movie.jpg
+A Dream of Silence: Revamped|bca39743-tga_usercreation_dreamofsilence.jpg
+Create Aeronautics|cf34ae55-create_aeronautics_official_art_downscaled.png
+Nopixel V|2aab8013-tga_usercreation_nopixelv.jpg
+Star Wars Droid Tycoon|9c849259-tga_usercreation_droid_tycoon.jpg
+TTK|c273cc87-tga_usercreation_ttk.jpg
+CDawg|84958de0-tga26_contentcreator_cdawg.jpg
+Cellbit|24fcc09b-tga26_contentcreator_cellbit.jpg
+iShowSpeed|8d38dc3c-tga26_contentcreator_ishowspeed.jpg
+LilSimsie|be0bae47-tga26_contentcreator_lilsimsie.jpg
+OhnePixel|c5a61998-tga26_contentcreator_ohnepixel.jpg
+Chovy|39cb6d52-tga26_best_esports_choovy.jpg
+Donk|5fddd06c-tga26_best_athlete_donk.jpg
+Erde|af601da4-tga26_best_athlete_erde.jpg
+Yatoro|7d0f64d2-tga26_best_athlete_yatoro.jpg
+ZywOo|37dd6e3b-tga26_best_athlete_zywoo.jpg
+Counter-Strike 2|0982c164-counter_strike_2.jpg
+Dota 2|90d5656c-dota2.jpg
+League of Legends|4daa61c0-league_of_legends.jpg
+Mobile Legends: Bang Bang|341516ec-mobile_legends_bang_bang.jpg
+Valorant|143d5357-valorant.jpg
+Gen.G|de57b20c-tga_esports_team_geng.jpg
+LOUD|55ba5bf4-tga_esports_team_loud.jpg
+Team Falcons (Counter-Strike 2)|bd67d16b-tga_esports_falcons_cs2.jpg
+Team Falcons (Rocket League)|f354d75c-tga_esports_team_falcons_rocketleague.jpg
+Team Spirit|9f4197dd-tga_esports_team_teamspirit_dota.jpg
+Team Vitality|50844a78-tga_esports_team_vitality.jpg
+Fable|acbb45ad-fable.jpg
+Final Fantasy VII Revelation|adbe9fcc-final_fantasy_vii.jpg
+God of War Laufey|bd0064d0-godofwar_laufey.jpg
+Resident Evil Veronica|665bd946-resident_evil_veronica.jpg
+The Witcher 4|de7e6a44-the_witcher_4.jpg
