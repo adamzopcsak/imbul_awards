@@ -40,6 +40,12 @@ everyone in the "who will win" row, kept apart from the server's own results:
 - **🔮 Imbul tippje** / **🏆 Imbul-díj** (gold frame, badge at the top): the most votes in the "who will win" and
   the "who would you give it to" rows, once shown with Mutatás mindenkinek.
 
+**Tippverseny (the guessing contest):** once the real winner of every category is set (and the deadline has
+passed), everyone sees the result: a banner on top of the Díjazottak page names the winner with their score and the
+voter's own place, and its button opens the full order on the summary page (`#kesz`): the top three on a podium, then
+everyone else, the voter's own row framed. It counts the correct tips (🔮); a tie goes to whose ❤️ favourite won more
+often, and if that is equal too, the place is shared. Only the counts are shown, never who voted for what.
+
 To try it locally: `python server.py --port 8006 --data data --dev-login --closes-at 2026-11-01T00:00:00+01:00`
 (`--closes-at` and `--opens-at` work only with `--dev-login`).
 

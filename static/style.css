@@ -536,3 +536,49 @@ td.real { color: var(--real); font-weight: 600; }
 .year-switch { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .85rem; margin-left: auto; }
 .year-switch select { font-weight: 700; }
 .year-switch:not([hidden]) + .me { margin-left: 0; }
+
+/* The guessing contest, once every real winner is set */
+.contest-banner {
+  text-align: center;
+  margin-bottom: 16px;
+  padding: 22px 20px;
+  border-radius: 16px;
+  border: 2px solid var(--accent);
+  background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 28%, var(--tile)), var(--tile) 70%);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.contest-trophy { font-size: 3rem; animation: trophy 1s cubic-bezier(.3, 1.6, .5, 1); }
+.contest-banner h2 { font-size: 1.6rem; margin: 4px 0 8px; }
+.contest-banner p { line-height: 1.5; }
+.contest-banner b { color: var(--accent); }
+.contest-mine { margin-top: 4px; color: var(--muted); font-weight: 600; }
+.contest-button { margin-top: 14px; padding: .7rem 1.4rem; font-size: 1rem; }
+
+.contest { text-align: center; margin-bottom: 26px; padding-bottom: 22px; border-bottom: 1px solid var(--border); }
+.contest h2 { font-size: 1.6rem; margin-bottom: 6px; }
+.podium { display: flex; justify-content: center; align-items: flex-end; gap: 12px; margin: 20px 0 14px; }
+.podium-step { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 30%; max-width: 200px; }
+.podium-step .medal { font-size: 2.2rem; }
+.podium-step .person { flex-direction: column; text-align: center; }
+.podium-step .person img, .podium-step .person .no-avatar { width: 52px; height: 52px; }
+.podium-step .person .names { align-items: center; }
+.podium-block {
+  width: 100%;
+  display: grid;
+  place-items: center;
+  border-radius: 10px 10px 0 0;
+  font-weight: 800;
+  font-size: 1.3rem;
+  color: var(--on-accent);
+  background: linear-gradient(var(--accent), color-mix(in srgb, var(--accent) 60%, var(--tile)));
+}
+.place-1 .podium-block { height: 92px; }
+.place-2 .podium-block { height: 64px; background: linear-gradient(#cfd6e4, #7d8799); }
+.place-3 .podium-block { height: 46px; background: linear-gradient(#e2a46b, #8a5a33); }
+.podium-step.mine .name::after, .board li.mine .name::after { content: " (te)"; color: var(--accent); }
+.board { list-style: none; padding: 0; margin: 0 auto; max-width: 520px; display: grid; gap: 6px; text-align: left; }
+.board li { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 10px; background: var(--input); }
+.board li.mine { outline: 2px solid var(--accent); }
+.board-place { width: 2.2rem; font-weight: 800; color: var(--muted); font-variant-numeric: tabular-nums; }
+.board .you { display: none; }
+@media (prefers-reduced-motion: reduce) { .contest-trophy { animation: none; } }

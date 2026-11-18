@@ -245,6 +245,57 @@ function categoryPage(index) {
       : "Válassz mindkét kérdésnél, és jön a következő kategória."));
 }
 
+// --- The guessing contest, once every category's real winner is set: who guessed the most winners
+
+const MEDALS = { 1: "🥇", 2: "🥈", 3: "🥉" };
+
+function names(rows) {
+  const list = rows.map((row) => row.name);
+  return list.length > 1 ? `${list.slice(0, -1).join(", ")} és ${list[list.length - 1]}` : list[0];
+}
+
+function renderBanner() {
+  const board = resultsMode() ? state.ballot.leaderboard : null;
+  $("results-banner").hidden = !resultsMode() || Boolean(board);
+  $("contest-banner").hidden = !board;
+  if (!board) return;
+  const first = board.rows.filter((row) => row.place === 1);
+  const mine = board.rows.find((row) => row.id === state.me.id);
+  $("contest-banner").replaceChildren(
+    h("div", { class: "contest-trophy", "aria-hidden": "true" }, "🏅"),
+    h("h2", {}, first.length ? "Megvan a tippverseny győztese!" : "Minden díj kiosztva!"),
+    first.length
+      ? h("p", {}, h("b", {}, names(first)), ` tippelt a legjobban: ${first[0].correct} / ${board.categories} talált.`)
+      : h("p", {}, "Ebben az évben senki nem tippelt."),
+    mine ? h("p", { class: "contest-mine" }, `Helyezésed: ${mine.place}. · ${mine.correct} talált`) : null,
+    h("button", { type: "button", class: "contest-button", onclick: () => { goToDone(); scrollToBallot(); } },
+      "A tippverseny teljes eredménye →"));
+}
+
+function scrollToBallot() {
+  window.scrollTo({ top: $("ballot-view").offsetTop - 16, behavior: reducedMotion.matches ? "auto" : "smooth" });
+}
+
+function leaderboardEl(board) {
+  const me = state.me.id;
+  const person = (row) => personEl(row, `${row.correct} / ${board.categories} talált · ❤️ ${row.agreed}`);
+  const podium = board.rows.slice(0, 3);
+  // The winner in the middle, as on a real podium
+  const order = podium.length === 3 ? [podium[1], podium[0], podium[2]] : podium;
+  return h("section", { class: "contest" },
+    h("h2", {}, "🏅 Tippverseny"),
+    h("p", { class: "muted small-text" }, "Ki tippelte meg a legtöbb valódi nyertest (🔮). Holtversenynél az előrébb, akinek a "
+      + "❤️ kedvence többször nyert; ha ez is egyezik, közös a helyezés."),
+    board.rows.length ? h("div", { class: "podium" }, ...order.map((row) => h("div", {
+      class: `podium-step place-${Math.min(row.place, 3)}${row.id === me ? " mine" : ""}`,
+    }, h("span", { class: "medal" }, MEDALS[row.place] || `${row.place}.`), person(row),
+    h("span", { class: "podium-block" }, `${row.place}.`)))) : h("p", { class: "muted" }, "Senki nem tippelt."),
+    board.rows.length > 3 ? h("ol", { class: "board" }, ...board.rows.slice(3).map((row) => h("li", {
+      class: row.id === me ? "mine" : "",
+    }, h("span", { class: "board-place" }, `${row.place}.`), person(row),
+    row.id === me ? h("span", { class: "you" }, "te") : null))) : null);
+}
+
 function resultsSummaryPage() {
   const categories = state.ballot.categories;
   const shown = categories.filter(resultOf).length;
@@ -260,7 +311,9 @@ function resultsSummaryPage() {
   const rows = categories.map((category, index) => h("tr", {}, h("th", { scope: "row" },
     h("button", { type: "button", class: "link-button", onclick: () => goTo(index) }, category.name)),
   real(category), names(category, "predict"), names(category, "pick")));
+  const board = state.ballot.leaderboard;
   return h("article", { class: "page done-page" },
+    board ? leaderboardEl(board) : null,
     h("div", { class: "celebrate", "aria-hidden": "true" }, "🏆"),
     h("h2", {}, shown === categories.length ? "Minden díjazott kint van!" : `${shown} / ${categories.length} díjazott kint`),
     h("p", { class: "muted" }, "Kattints egy kategóriára a részletekért."),
@@ -399,7 +452,7 @@ function refreshPage() {
 function renderBallot() {
   renderDeadline();
   const results = resultsMode();
-  $("results-banner").hidden = !results;
+  renderBanner();
   $("ballot-tab").textContent = results ? "🏆 Díjazottak" : "🗳️ Szavazás";
   const fromHash = state.ballot.categories.findIndex((c) => `#${c.id}` === location.hash);
   const open = results ? 0 : firstOpenIndex(0);
@@ -424,6 +477,8 @@ function watchResults() {
           && JSON.stringify(ballot.actual) === JSON.stringify(state.ballot.actual || {})) return;
       state.ballot.results = ballot.results;
       state.ballot.actual = ballot.actual;
+      state.ballot.leaderboard = ballot.leaderboard;
+      renderBanner();
       const current = !ballotUi.done && state.ballot.categories[ballotUi.index];
       const fresh = current && ballot.results[current.id] && !before[current.id];
       if (!ballotUi.animating) refreshPage();
