@@ -15,8 +15,9 @@ Paths:
   GET    /api/reveal                the hub tile's name and link, from opensAt on (404 before; public)
   GET    /api/me                    who is logged in (401 if nobody, 403 if they may not vote)
   GET    /api/ballot[?ev=2026]      a year's (the current one's by default) categories, nominees and my votes, and
-                                    which years there are; after the deadline also the shown
-                                    results and the real winners (/api/admin/winners)
+                                    which years there are; after the deadline also the shown results, the real
+                                    winners (/api/admin/winners) and, once every real winner is set, the guessing
+                                    contest ("leaderboard")
   PUT    /api/votes                 {"category", "kind": "predict" | "pick", "nominee": index, -1 or null}
                                     (-1 is "Ötletem sincs, ember"; a vote can be changed, not taken back)
 Admin only:
@@ -590,6 +591,20 @@ class App:
         summary["results"] = self.results(ballot.year, totals)
         return summary
 
+    def leaderboard(self, year=None):
+        """The guessing contest for everyone, once the real winner of every category is set: who guessed how many
+        (ties share a place; whose favourite won more often goes first). None until then."""
+        ballot = self.ballot_of(year)
+        if len(self.store.winners(ballot.year)) < len(ballot.categories):
+            return None
+        rows, place, last = [], 0, None
+        for index, score in enumerate(self.summary(ballot.year)["scores"], start=1):
+            if (score["correct"], score["agreed"]) != last:
+                place, last = index, (score["correct"], score["agreed"])
+            rows.append({"place": place, "id": score["id"], "name": score["name"], "avatarUrl": score["avatarUrl"],
+                         "correct": score["correct"], "agreed": score["agreed"]})
+        return {"categories": len(ballot.categories), "rows": rows}
+
     def results(self, year=None, totals=None):
         """The server's result in every category the admin has shown: per question, the nominees with the most votes
         (all of them on a tie; "Ötletem sincs" never wins, and nobody wins without a vote)."""
@@ -880,7 +895,8 @@ class Handler(BaseHTTPRequestHandler):
         actual = self.app.store.winners(ballot.year) if public["closed"] else {}
         self._json(HTTPStatus.OK, {**public, "current": self.app.ballot.year, "years": sorted(self.app.ballots),
                                    "votes": self.app.store.votes_of(user_id, ballot.year), "results": results,
-                                   "actual": actual})
+                                   "actual": actual,
+                                   "leaderboard": self.app.leaderboard(ballot.year) if public["closed"] else None})
 
     def _summary(self):
         if self._admin() is not None:

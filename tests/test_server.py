@@ -519,6 +519,30 @@ class DijazottakTests(ServerTest):
         self.assertEqual(ballot["actual"], {"goty": 4})  # shown even if the Imbul result is not
         self.assertEqual(ballot["results"], {})
 
+    def test_guessing_contest_once_every_winner_is_set(self):
+        self.close()
+        categories = [c["id"] for c in self.app.ballot.categories]
+        for category in categories[:-1]:
+            self.request("PUT", "/api/admin/winners", body={"category": category, "nominee": 2 if category == "goty"
+                                                            else 0}, cookie=self.admin)
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertIsNone(ballot["leaderboard"])  # one is still missing
+        self.request("PUT", "/api/admin/winners", body={"category": categories[-1], "nominee": 0}, cookie=self.admin)
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        board = ballot["leaderboard"]
+        self.assertEqual(board["categories"], 30)
+        # Yagi and Haver both guessed Game of the Year: they share the first place; Harmadik guessed nothing
+        self.assertEqual([(row["place"], row["name"], row["correct"]) for row in board["rows"]],
+                         [(1, "Haver", 1), (1, "Yagi", 1), (3, "Harmadik", 0)])
+        self.assertNotIn("votes", board["rows"][0])  # who guessed what stays with the admin
+
+    def test_no_guessing_contest_before_the_deadline(self):
+        for category in [c["id"] for c in self.app.ballot.categories]:
+            self.request("PUT", "/api/admin/winners", body={"category": category, "nominee": 0}, cookie=self.admin)
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["actual"], {})
+        self.assertIsNone(ballot["leaderboard"])
+
     def test_only_the_admin_shows_or_hides(self):
         response, _ = self.reveal("goty", cookie=self.friend)
         self.assertEqual(response.status, 403)
