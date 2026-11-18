@@ -235,10 +235,11 @@ function categoryPage(index) {
       h("h2", {}, category.name)),
     ...["predict", "pick"].map((kind) => h("section", { class: `question ${kind}` },
       h("h3", {}, QUESTIONS[kind]),
-      // As many columns as cards (the nominees and "Ötletem sincs"), so the row always fills the page's width
-      h("div", { class: "cards", style: `--count: ${category.nominees.length + 1}` },
+      // As many columns as cards, so the row always fills the page's width. "Ötletem sincs" only where you give the
+      // award: a tip can always be a bold guess
+      h("div", { class: "cards", style: `--count: ${category.nominees.length + (kind === "pick" ? 1 : 0)}` },
         ...category.nominees.map((nominee, i) => nomineeCard(category, kind, i, nominee)),
-        nomineeCard(category, kind, NO_IDEA, { name: "Ötletem sincs, ember" })))),
+        kind === "pick" ? nomineeCard(category, kind, NO_IDEA, { name: "Ötletem sincs, ember" }) : null))),
     h("p", { class: "page-hint" }, isComplete(category)
       ? "✓ Mindkét szavazatod megvan. Bármikor módosíthatod."
       : "Válassz mindkét kérdésnél, és jön a következő kategória."));

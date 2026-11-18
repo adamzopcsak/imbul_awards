@@ -325,9 +325,9 @@ class VoteTests(ServerTest):
         # Not choosing is "Ötletem sincs, ember", not taking the vote back
         response, _ = self.vote(self.friend, "goty", "predict", None)
         self.assertEqual(response.status, 400)
-        self.vote(self.friend, "goty", "predict", server.NO_IDEA)
+        self.vote(self.friend, "goty", "pick", server.NO_IDEA)
         _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
-        self.assertEqual(ballot["votes"], {"goty": {"predict": -1, "pick": 5}})
+        self.assertEqual(ballot["votes"], {"goty": {"predict": 1, "pick": -1}})
 
     def test_bad_votes_are_refused(self):
         for category, kind, nominee in (("nope", "predict", 0), ("goty", "maybe", 0), ("goty", "pick", 6),
@@ -337,23 +337,28 @@ class VoteTests(ServerTest):
                 response, _ = self.vote(self.friend, category, kind, nominee)
                 self.assertEqual(response.status, 400)
 
-    def test_no_idea_is_an_answer_in_every_category(self):
-        response, body = self.vote(self.friend, "goty", "predict", server.NO_IDEA)
+    def test_no_idea_is_an_answer_when_giving_the_award(self):
+        response, body = self.vote(self.friend, "goty", "pick", server.NO_IDEA)
         self.assertEqual(response.status, 200)
-        self.assertEqual(body["votes"], {"goty": {"predict": -1}})
-        self.vote(self.admin, "goty", "predict", server.NO_IDEA)
-        self.vote(self.admin, "goty", "pick", 0)
+        self.assertEqual(body["votes"], {"goty": {"pick": -1}})
+        self.vote(self.admin, "goty", "pick", server.NO_IDEA)
+        self.vote(self.admin, "goty", "predict", 0)
         _, summary = self.request("GET", "/api/admin/summary", cookie=self.admin)
-        self.assertEqual(summary["totals"]["goty"]["noIdea"], {"predict": 2, "pick": 0})
-        self.assertEqual(summary["totals"]["goty"]["predict"], [0] * 6)
+        self.assertEqual(summary["totals"]["goty"]["noIdea"], {"predict": 0, "pick": 2})
+        self.assertEqual(summary["totals"]["goty"]["pick"], [0] * 6)
         self.assertEqual(summary["totals"]["rpg"]["noIdea"], {"predict": 0, "pick": 0})
-        # It is never a winner, and never a correct guess
+        # It is never a winner
         response, _ = self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": -1},
                                    cookie=self.admin)
         self.assertEqual(response.status, 400)
-        _, summary = self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": 0},
-                                  cookie=self.admin)
-        self.assertEqual({s["id"]: s["correct"] for s in summary["scores"]}, {ADMIN: 0, FRIEND: 0})
+
+    def test_a_tip_is_always_a_nominee(self):
+        for nominee in (server.NO_IDEA, -1.0):
+            with self.subTest(nominee=nominee):
+                response, _ = self.vote(self.friend, "goty", "predict", nominee)
+                self.assertEqual(response.status, 400)
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["votes"], {})
 
     def test_strangers_cannot_vote(self):
         response, _ = self.vote(None, "goty", "pick", 0)
