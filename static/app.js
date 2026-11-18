@@ -418,7 +418,7 @@ function watchResults() {
   const check = async () => {
     if (document.hidden || !resultsMode()) return;
     try {
-      const ballot = await api("api/ballot");
+      const ballot = await api(ballotPath(state.ballot.year === state.ballot.current ? null : state.ballot.year));
       const before = state.ballot.results || {};
       if (JSON.stringify(ballot.results) === JSON.stringify(before)
           && JSON.stringify(ballot.actual) === JSON.stringify(state.ballot.actual || {})) return;
@@ -699,7 +699,7 @@ function renderReveal() {
 async function setRevealed(category, shown) {
   $("admin-error").textContent = "";
   try {
-    state.summary = await api("api/admin/reveal", { method: "PUT", body: { category, shown } });
+    state.summary = await api("api/admin/reveal", { method: "PUT", body: { category, shown, year: state.ballot.year } });
     renderAdmin();
     // The admin's own Díjazottak pages follow at once
     if (resultsMode()) {
@@ -721,7 +721,7 @@ function renderAdmin() {
 async function loadAdmin() {
   $("admin-error").textContent = "";
   try {
-    [state.summary, state.access] = await Promise.all([api("api/admin/summary"), api("api/admin/access")]);
+    [state.summary, state.access] = await Promise.all([api(`api/admin/summary?ev=${state.ballot.year}`), api("api/admin/access")]);
     renderAdmin();
     renderAccess();
   } catch (error) {
@@ -731,7 +731,7 @@ async function loadAdmin() {
 
 async function setWinner(category, nominee) {
   try {
-    state.summary = await api("api/admin/winners", { method: "PUT", body: { category, nominee } });
+    state.summary = await api("api/admin/winners", { method: "PUT", body: { category, nominee, year: state.ballot.year } });
     renderAdmin();
     // The admin's own Díjazottak pages follow at once
     if (resultsMode()) {
@@ -789,6 +789,51 @@ function showLogin() {
   }).catch(() => null);
 }
 
+// --- Years: the latest year is the current vote and the default; earlier years show their results the same way.
+// The choice is kept in the address (?ev=2026), only while it is not the current year.
+
+function chosenYear() {
+  const year = Number(new URLSearchParams(location.search).get("ev"));
+  return Number.isInteger(year) && year > 0 ? year : null;
+}
+
+function ballotPath(year = chosenYear()) {
+  return year ? `api/ballot?ev=${year}` : "api/ballot";
+}
+
+async function loadBallot(year = chosenYear()) {
+  const ballot = await api(ballotPath(year));
+  state.votes = ballot.votes;
+  state.ballot = ballot;
+}
+
+function renderYears() {
+  const { year, years, current } = state.ballot;
+  document.querySelector(".page-header .year").textContent = String(year);
+  document.title = year === current ? "Imbul Awards" : `Imbul Awards ${year}`;
+  $("year-switch").hidden = years.length < 2;
+  $("year-select").replaceChildren(...[...years].reverse().map((y) => h("option", { value: String(y) },
+    y === current ? `${y} (idei)` : String(y))));
+  $("year-select").value = String(year);
+}
+
+async function switchYear(year) {
+  const params = new URLSearchParams(location.search);
+  if (year === state.ballot.current) params.delete("ev");
+  else params.set("ev", String(year));
+  const search = params.toString();
+  history.replaceState(null, "", `${location.pathname}${search ? `?${search}` : ""}`);
+  try {
+    await loadBallot(year === state.ballot.current ? null : year);
+  } catch (error) {
+    $("ballot-error").textContent = error.message;
+    return;
+  }
+  renderYears();
+  renderBallot();
+  if (!$("admin-view").hidden) loadAdmin();
+}
+
 async function start() {
   for (const id of ["login-view", "tabs", "ballot-view", "admin-view", "me"]) $(id).hidden = true;
   $("loading").hidden = false;
@@ -801,17 +846,22 @@ async function start() {
     $("loading").hidden = false;
     return;
   }
-  if (location.search) history.replaceState(null, "", location.pathname);
+  // Tidy the login's ?hiba=… away, keep the chosen year
+  const year = chosenYear();
+  history.replaceState(null, "", `${location.pathname}${year ? `?ev=${year}` : ""}${location.hash}`);
   $("me-person").replaceWith(Object.assign(personEl(state.me), { id: "me-person" }));
   $("me").hidden = false;
   try {
-    const ballot = await api("api/ballot");
-    state.votes = ballot.votes;
-    state.ballot = ballot;
+    await loadBallot();
   } catch (error) {
+    if (chosenYear()) {  // a year there is none of: the current one instead
+      history.replaceState(null, "", location.pathname);
+      return start();
+    }
     $("loading").textContent = `Hiba: ${error.message}`;
     return;
   }
+  renderYears();
   $("loading").hidden = true;
   $("tabs").hidden = !state.me.isAdmin;
   $("admin-tab").hidden = !state.me.isAdmin;
@@ -822,6 +872,7 @@ async function start() {
 document.querySelectorAll("[data-tab]").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
 document.querySelectorAll("[data-sub]").forEach((b) => b.addEventListener("click", () => showSub(b.dataset.sub)));
 $("voter-select").addEventListener("change", renderVoterDetail);
+$("year-select").addEventListener("change", (event) => switchYear(Number(event.target.value)));
 $("logout").addEventListener("click", async () => {
   await api("logout", { method: "POST", body: {} }).catch(() => null);
   location.href = location.pathname;

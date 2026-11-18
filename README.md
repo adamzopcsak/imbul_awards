@@ -16,7 +16,7 @@ The ballot is paged: one category per page, every nominee as a card with its pic
 at once; another card changes it, but a vote cannot be taken back. Once both questions of a page are answered, the page lights up and the next
 unanswered category slides in by itself; after the last one comes a summary of all your votes. The arrows, the dots
 (gold when a category is done), the ← / → keys and the address (`#goty`, `#kesz` for the summary) move between pages
-by hand. Votes can be changed until the deadline in `nominees.json` (`votingClosesAt`), after which the ballot is
+by hand. Votes can be changed until the deadline in `ballots/2026.json` (`votingClosesAt`), after which the ballot is
 read-only.
 
 ## Díjazottak (after the deadline)
@@ -43,6 +43,21 @@ everyone in the "who will win" row, kept apart from the server's own results:
 To try it locally: `python server.py --port 8006 --data data --dev-login --closes-at 2026-11-01T00:00:00+01:00`
 (`--closes-at` and `--opens-at` work only with `--dev-login`).
 
+## Years
+
+Every year has its own file in `ballots/` (`2026.json`, next year `2027.json`, ...), with the year, the deadline
+(`votingClosesAt`), the reveal (`opensAt`) and the nominees. The latest year is the current vote and what the page
+shows by default; an earlier year can never be voted in any more, and shows its Díjazottak (results), page by page as
+the current one. From the second year on, an **Év** dropdown in the header switches between them (kept in the address
+as `?ev=2026`); the admin pages follow the chosen year too (totals, votes, Díjazottak, real winners).
+
+The database keeps each year's votes, shown results and real winners apart (a `year` column). A database from before
+the years is converted at the first start: its data becomes 2026's.
+
+**Next year:** add `ballots/2027.json` (with the new nominees, `opensAt` and `votingClosesAt`), run
+`scripts/fetch_images.py` for the new pictures, and deploy. The yagi.hu hub's reveal (`/hamarosan/2.json`) follows the
+current year's `opensAt`.
+
 ## Who can get in
 
 Login is with Discord (OAuth2, `identify` scope only). Only these people get in:
@@ -65,7 +80,7 @@ As on Imbul Stats, **Admin → Hozzáférés** has two buttons:
   on the list and can be given back one by one (**Visszaadás**); one taken away (**Elvétel**) stays out even while
   everyone on the server may vote.
 
-**The reveal, 2026-12-01 10:00** (`opensAt` in `nominees.json`), happens by itself:
+**The reveal, 2026-12-01 10:00** (`opensAt` in `ballots/2026.json`), happens by itself:
 
 - The yagi.hu hub shows the project as **Imbul ******** ("Hamarosan", a countdown, no name or link; the linked tile is
   in the hub's admin-only `private/tiles.js` until then). At zero the hub asks `/hamarosan/2.json`, which Caddy passes
@@ -87,18 +102,18 @@ The admin votes like everyone else, and also gets the **Admin** tab:
 
 ## Nominees
 
-`nominees.json` holds the categories and nominees (Hungarian category name, the original English name, and each
+`ballots/<year>.json` (now `ballots/2026.json`) holds a year's categories and nominees (Hungarian category name, the original English name, and each
 nominee as `[name, studio or detail]`). Votes refer to a nominee by its position in its category, so do not reorder
 or remove nominees once voting has started (fixing a typo is fine). The 2026 list was announced on 2026-11-17; the
 sources are in the file.
 
-**Pictures:** `images.json` maps each nominee's name to a picture from its English Wikipedia article (cover art,
-poster or photo; for a user creation, the game it was made for). `scripts/fetch_images.py` finds them; run it again
-after changing the nominees (it only looks up the new names). Wrong matches are fixed in its `OVERRIDES`. The pictures
-are not copied into the repo: the page loads them from `upload.wikimedia.org` (allowed in the Content-Security-Policy,
-sent without a referrer). Four games Wikipedia has no picture for use their official Steam store image (`DIRECT` in the
-script, from `shared.akamai.steamstatic.com`); a landscape picture is shown whole over a blurred copy of itself. A
-nominee whose picture does not load gets its initials instead.
+**Pictures:** every nominee shows The Game Awards' own picture (the same as on thegameawards.com, square, including
+photos of the performers, creators, players and teams). `scripts/tga_<year>.txt` lists them (read off the site by hand:
+it sits behind a Cloudflare check, its picture host does not); `scripts/fetch_tga_images.py <year>` downloads them,
+shrinks them to 480x480 JPEGs into `static/img/<year>/` (about 50 KB each, served by this app and cached by browsers)
+and writes each one into the ballot as the nominee's third field. It needs Pillow (`python -m pip install pillow`),
+the app itself does not. A nominee without one falls back to `images.json` (`scripts/fetch_images.py`: Wikipedia,
+Wikimedia, a few Steam store images), and one whose picture does not load shows its initials.
 
 ## How it works
 
@@ -152,6 +167,6 @@ every deploy.
 ./deploy.sh
 ```
 
-It runs the tests on `origin/main`, then unpacks `server.py`, `nominees.json`, `static/` and the systemd unit into
+It runs the tests on `origin/main`, then unpacks `server.py`, `ballots/`, `images.json`, `static/` and the systemd unit into
 `/opt/imbul-awards` on the VPS, writes `version.json`, installs `deploy/imbul-awards.service` and restarts it. It stops
 if `/etc/imbul-awards.env` is missing.

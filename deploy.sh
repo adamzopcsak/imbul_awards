@@ -29,7 +29,7 @@ git worktree add -q --detach "$CHECKOUT" origin/main
 (cd "$CHECKOUT" && "$PYTHON" -m unittest discover -s tests -q) || { echo "Tests failed; deploy stopped." >&2; exit 1; }
 
 # Unpack into a fresh folder, then swap it in. core.autocrlf=false keeps the LF line endings on Windows.
-git -c core.autocrlf=false archive --format=tar origin/main server.py nominees.json images.json static deploy/imbul-awards.service | ssh -i "$KEY" "$HOST" "set -e
+git -c core.autocrlf=false archive --format=tar origin/main server.py ballots images.json static deploy/imbul-awards.service | ssh -i "$KEY" "$HOST" "set -e
   test -f /etc/imbul-awards.env || { echo 'Missing /etc/imbul-awards.env (see README); deploy stopped.' >&2; exit 1; }
   rm -rf $APP.new $APP.old
   mkdir $APP.new

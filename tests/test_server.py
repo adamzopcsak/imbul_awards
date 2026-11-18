@@ -537,6 +537,76 @@ class DijazottakTests(ServerTest):
         self.assertTrue(status["closed"])
 
 
+class YearTests(ServerTest):
+    """Every year has its own ballot (ballots/<year>.json): the latest is the current vote, the earlier ones show
+    their results, page by page like the current one."""
+
+    def setUp(self):
+        super().setUp()
+        past = json.loads(server.NOMINEES_FILE.read_text(encoding="utf-8"))
+        past.update({"year": 2025, "title": "The Game Awards 2025", "votingClosesAt": "2025-12-10T23:59:59+01:00"})
+        past_file = Path(self.tmp.name) / "2025.json"
+        past_file.write_text(json.dumps(past), encoding="utf-8")
+        self.app.ballots[2025] = server.Ballot(past_file)
+        self.admin, _ = self.login(ADMIN)
+
+    def test_the_latest_year_is_the_default(self):
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.admin)
+        self.assertEqual((ballot["year"], ballot["current"], ballot["years"]), (2026, 2026, [2025, 2026]))
+        self.assertFalse(ballot["closed"])
+        _, past = self.request("GET", "/api/ballot?ev=2025", cookie=self.admin)
+        self.assertEqual((past["year"], past["current"], past["title"]), (2025, 2026, "The Game Awards 2025"))
+        self.assertTrue(past["closed"])
+        self.app.ballots[2025].closes_at = server.datetime(2099, 1, 1, tzinfo=server.timezone.utc)
+        _, past = self.request("GET", "/api/ballot?ev=2025", cookie=self.admin)
+        self.assertTrue(past["closed"])  # an earlier year is over even if its file says otherwise
+        response, _ = self.request("GET", "/api/ballot?ev=1999", cookie=self.admin)
+        self.assertEqual(response.status, 400)
+
+    def test_each_year_keeps_its_own_votes_results_and_winners(self):
+        self.request("PUT", "/api/votes", body={"category": "goty", "kind": "pick", "nominee": 1}, cookie=self.admin)
+        response, _ = self.request("PUT", "/api/votes", body={"category": "goty", "kind": "pick", "nominee": 1,
+                                                              "year": 2025}, cookie=self.admin)
+        self.assertEqual(response.status, 409)  # an earlier year's vote is over
+        self.request("PUT", "/api/admin/winners", body={"category": "goty", "nominee": 3, "year": 2025}, cookie=self.admin)
+        self.request("PUT", "/api/admin/reveal", body={"category": "goty", "shown": True, "year": 2025}, cookie=self.admin)
+        _, past = self.request("GET", "/api/ballot?ev=2025", cookie=self.admin)
+        self.assertEqual(past["votes"], {})
+        self.assertEqual(past["actual"], {"goty": 3})
+        self.assertEqual(past["results"], {"goty": {"predict": {"winners": [], "votes": 0},
+                                                    "pick": {"winners": [], "votes": 0}}})
+        _, current = self.request("GET", "/api/ballot", cookie=self.admin)
+        self.assertEqual(current["votes"], {"goty": {"pick": 1}})
+        _, summary = self.request("GET", "/api/admin/summary", cookie=self.admin)
+        self.assertEqual((summary["year"], summary["winners"], summary["revealed"]), (2026, {}, []))
+        _, summary = self.request("GET", "/api/admin/summary?ev=2025", cookie=self.admin)
+        self.assertEqual((summary["year"], summary["winners"], summary["revealed"]), (2025, {"goty": 3}, ["goty"]))
+
+
+class YearMigrationTests(unittest.TestCase):
+    def test_a_database_from_before_the_years_becomes_2026s(self):
+        with tempfile.TemporaryDirectory() as folder:
+            import sqlite3
+            conn = sqlite3.connect(Path(folder) / "awards.db")
+            conn.executescript("""
+                CREATE TABLE votes (user_id TEXT NOT NULL, category TEXT NOT NULL, kind TEXT NOT NULL,
+                                    nominee INTEGER NOT NULL, at TEXT NOT NULL, PRIMARY KEY (user_id, category, kind));
+                CREATE TABLE revealed (category TEXT PRIMARY KEY, at TEXT NOT NULL);
+                CREATE TABLE winners (category TEXT PRIMARY KEY, nominee INTEGER NOT NULL, at TEXT NOT NULL);
+                INSERT INTO votes VALUES ('100000000000000001', 'goty', 'pick', 2, '2026-11-18T10:00:00Z');
+                INSERT INTO revealed VALUES ('goty', '2026-12-11T02:00:00Z');
+                INSERT INTO winners VALUES ('goty', 4, '2026-12-11T02:00:00Z');
+            """)
+            conn.close()
+            store = server.Store(folder)
+            self.assertEqual(store.votes_of("100000000000000001", 2026), {"goty": {"pick": 2}})
+            self.assertEqual(list(store.revealed(2026)), ["goty"])
+            self.assertEqual(store.winners(2026), {"goty": 4})
+            self.assertEqual(store.winners(2027), {})
+            server.Store(folder)  # a second start leaves it as it is
+            self.assertEqual(store.winners(2026), {"goty": 4})
+
+
 class ImageTests(unittest.TestCase):
     def test_only_wikimedia_pictures_are_passed_on(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -547,9 +617,13 @@ class ImageTests(unittest.TestCase):
                 "Saros": {"title": None, "url": None},
             }), encoding="utf-8")
             ballot = server.Ballot(server.NOMINEES_FILE, images)
-        goty = ballot.public()["categories"][0]["nominees"]
-        self.assertEqual(goty[2]["image"], "https://upload.wikimedia.org/wikipedia/en/4/46/GTA_VI.png")
-        self.assertIsNone(goty[0]["image"])
+        # A nominee without its own picture gets the one found for its name; its own one wins
+        self.assertEqual(ballot.image_of(["Grand Theft Auto VI", "Rockstar"]),
+                         "https://upload.wikimedia.org/wikipedia/en/4/46/GTA_VI.png")
+        self.assertIsNone(ballot.image_of(["007 First Light", "IO"]))
+        self.assertEqual(ballot.image_of(["Grand Theft Auto VI", "Rockstar", "img/2026/gta6.jpg"]), "img/2026/gta6.jpg")
+        self.assertEqual(ballot.image_of(["Grand Theft Auto VI", "Rockstar", "../server.py"]),
+                         "https://upload.wikimedia.org/wikipedia/en/4/46/GTA_VI.png")
         self.assertNotIn("Pragmata", ballot.images)
         self.assertNotIn("Saros", ballot.images)
 
@@ -583,6 +657,22 @@ class WelcomePageTests(unittest.TestCase):
         self.assertIn("2026. december 9-én 23:59-ig", page)
 
 
+class LocalPictureTests(ServerTest):
+    def test_pictures_are_served_and_kept(self):
+        response, body = self.request("GET", "/img/2026/gta6.jpg")
+        self.assertEqual(response.status, 200)
+        self.assertEqual(response.headers["Content-Type"], "image/jpeg")
+        self.assertIn("max-age", response.headers["Cache-Control"])
+        self.assertEqual(body[:2], bytes([0xFF, 0xD8]))  # a JPEG
+
+    def test_nothing_else_is_served_from_there(self):
+        for path in ("/img/2026/nope.jpg", "/img/2026/../../server.py", "/img/2026/gta6.png", "/img/x/gta6.jpg",
+                     "/img/2026/%2e%2e%2fserver.jpg"):
+            with self.subTest(path=path):
+                response, _ = self.request("GET", path)
+                self.assertEqual(response.status, 404)
+
+
 class NomineesFileTests(unittest.TestCase):
     def test_every_category_is_well_formed(self):
         data = json.loads(server.NOMINEES_FILE.read_text(encoding="utf-8"))
@@ -593,8 +683,11 @@ class NomineesFileTests(unittest.TestCase):
                 self.assertTrue(category["name"] and category["original"])
                 self.assertGreaterEqual(len(category["nominees"]), 5)
                 for nominee in category["nominees"]:
-                    self.assertEqual(len(nominee), 2)
+                    self.assertIn(len(nominee), (2, 3))
                     self.assertTrue(nominee[0])
+                    if len(nominee) == 3:  # The Game Awards' own picture, served from static/
+                        self.assertRegex(nominee[2], server.LOCAL_IMAGE)
+                        self.assertTrue((server.STATIC_DIR / nominee[2]).is_file(), nominee[2])
         server.Ballot()  # the deadline parses, with a time zone
         self.assertIsNotNone(server.Ballot().closes_at.tzinfo)
 

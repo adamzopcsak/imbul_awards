@@ -168,7 +168,8 @@ button.small { padding: .3rem .7rem; font-size: .85rem; }
 .card:hover:not(:disabled) { border-color: var(--kind); transform: translateY(-2px); filter: none; }
 .card:disabled { cursor: default; }
 .card:disabled:not([aria-pressed="true"]) { opacity: .5; }
-.card .art { position: relative; display: block; aspect-ratio: 3 / 4; background: var(--border); overflow: hidden; }
+/* Square, like The Game Awards' own pictures */
+.card .art { position: relative; display: block; aspect-ratio: 1 / 1; background: var(--border); overflow: hidden; }
 .card .art img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .3s ease; }
 .card:hover:not(:disabled) .art img { transform: scale(1.04); }
 .card .art.logo { background: #e8ecf5; padding: 14%; }
@@ -530,3 +531,8 @@ td.real { color: var(--real); font-weight: 600; }
   filter: blur(14px) brightness(.55);
 }
 .card .art.wide img { position: relative; height: auto; object-fit: contain; }
+
+/* Year switcher (from the second year on) */
+.year-switch { display: flex; align-items: center; gap: .5rem; color: var(--muted); font-size: .85rem; margin-left: auto; }
+.year-switch select { font-weight: 700; }
+.year-switch:not([hidden]) + .me { margin-left: 0; }

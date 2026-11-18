@@ -1,6 +1,6 @@
 """Imbul Awards: the Imbul a Bakterház Discord server's own Game Awards vote, at imbulawards.yagi.hu (standard library only).
 
-Every category of The Game Awards (nominees.json) has two votes: who you think will win ("predict") and who you would
+Every category of The Game Awards (ballots/<year>.json, the latest year is the current vote) has two votes: who you think will win ("predict") and who you would
 give the award to ("pick"). Login is with Discord; only the admins (AWARDS_ADMIN_USERS) and the people the admin let in
 on the admin page may vote. Everyone else who tries to log in is refused, and shows up on the admin page, where one
 click lets them in. The admin sees every vote, the totals per category, and (once the winners are set) who guessed best.
@@ -14,13 +14,14 @@ Paths:
   GET    /api/status                whether voting is closed (public, for the welcome page)
   GET    /api/reveal                the hub tile's name and link, from opensAt on (404 before; public)
   GET    /api/me                    who is logged in (401 if nobody, 403 if they may not vote)
-  GET    /api/ballot                the categories, the nominees and my votes; after the deadline also the shown
+  GET    /api/ballot[?ev=2026]      a year's (the current one's by default) categories, nominees and my votes, and
+                                    which years there are; after the deadline also the shown
                                     results and the real winners (/api/admin/winners)
   PUT    /api/votes                 {"category", "kind": "predict" | "pick", "nominee": index, -1 or null}
                                     (-1 is "Ötletem sincs, ember"; a vote can be changed, not taken back)
 Admin only:
-  GET    /api/admin/summary         every vote, the totals, the winners and the guessing leaderboard
-  PUT    /api/admin/winners         {"category", "nominee": index or null}: the real winner
+  GET    /api/admin/summary[?ev=]   a year's every vote, the totals, the winners and the guessing leaderboard
+  PUT    /api/admin/winners         {"category", "nominee": index or null, "year"}: the real winner
   PUT    /api/admin/reveal          {"category", "shown": true | false}: show the server's result in that category
                                     to everyone (after the deadline), or hide it again
   GET    /api/admin/access          who may vote, and who tried to log in without access
@@ -62,9 +63,20 @@ from pathlib import Path
 
 APP_DIR = Path(__file__).resolve().parent
 STATIC_DIR = APP_DIR / "static"
-NOMINEES_FILE = APP_DIR / "nominees.json"
+# One file per year (ballots/2026.json, ...): the latest is the current vote, the earlier ones show their results
+BALLOTS_DIR = APP_DIR / "ballots"
+
+
+def ballot_files():
+    return sorted(BALLOTS_DIR.glob("[0-9][0-9][0-9][0-9].json"))
+
+
+NOMINEES_FILE = ballot_files()[-1]  # the current year's
 IMAGES_FILE = APP_DIR / "images.json"
 # The nominees' pictures are shown straight from Wikimedia, a few from Steam's store (see scripts/fetch_images.py)
+# The Game Awards' own pictures, shrunk and served from static/img/<year>/ (scripts/fetch_tga_images.py); in a ballot
+# as the nominee's third field
+LOCAL_IMAGE = re.compile(r"img/[0-9]{4}/[a-z0-9_-]+\.jpg")
 IMAGE_URL = re.compile(r"https://(upload|thumb)\.wikimedia\.org/[A-Za-z0-9_./%()'!,~+-]+"
                        r"|https://shared\.akamai\.steamstatic\.com/store_item_assets/steam/apps/[0-9]+/[A-Za-z0-9_./-]+")
 VERSION_FILE = APP_DIR / "version.json"
@@ -133,25 +145,35 @@ CREATE TABLE IF NOT EXISTS settings (
     key        TEXT PRIMARY KEY,
     value      TEXT NOT NULL
 );
+-- Each year's vote has its own votes, shown results and winners (the categories' ids repeat every year)
 CREATE TABLE IF NOT EXISTS votes (
+    year       INTEGER NOT NULL,
     user_id    TEXT NOT NULL,
     category   TEXT NOT NULL,
     kind       TEXT NOT NULL,
     nominee    INTEGER NOT NULL,
     at         TEXT NOT NULL,
-    PRIMARY KEY (user_id, category, kind)
+    PRIMARY KEY (year, user_id, category, kind)
 );
 -- Categories whose result (the most voted nominees) the admin has shown to everyone
 CREATE TABLE IF NOT EXISTS revealed (
-    category   TEXT PRIMARY KEY,
-    at         TEXT NOT NULL
+    year       INTEGER NOT NULL,
+    category   TEXT NOT NULL,
+    at         TEXT NOT NULL,
+    PRIMARY KEY (year, category)
 );
 CREATE TABLE IF NOT EXISTS winners (
-    category   TEXT PRIMARY KEY,
+    year       INTEGER NOT NULL,
+    category   TEXT NOT NULL,
     nominee    INTEGER NOT NULL,
-    at         TEXT NOT NULL
+    at         TEXT NOT NULL,
+    PRIMARY KEY (year, category)
 );
 """
+
+# The first year: a database from before years were kept holds that year's votes
+FIRST_YEAR = 2026
+YEARLY_TABLES = ("votes", "revealed", "winners")
 
 
 def now_iso():
@@ -187,10 +209,11 @@ class ValidationError(ValueError):
 
 
 class Ballot:
-    """The categories and nominees (nominees.json). A nominee is referred to by its index in its category."""
+    """One year's categories and nominees (ballots/<year>.json). A nominee is referred to by its index in its category."""
 
     def __init__(self, path=NOMINEES_FILE, images_path=IMAGES_FILE):
         data = json.loads(Path(path).read_text(encoding="utf-8"))
+        self.year = int(data.get("year") or Path(path).stem)
         self.title = data["title"]
         self.ceremony = data.get("ceremony", "")
         self.closes_at = datetime.fromisoformat(data["votingClosesAt"])
@@ -221,15 +244,22 @@ class Ballot:
         if isinstance(nominee, bool) or not isinstance(nominee, int) or not 0 <= nominee < len(category["nominees"]):
             raise ValidationError("Nincs ilyen jelölt.")
 
+    def image_of(self, nominee):
+        """The nominee's own picture (The Game Awards', served here), else the one found for its name."""
+        if len(nominee) > 2 and isinstance(nominee[2], str) and LOCAL_IMAGE.fullmatch(nominee[2]):
+            return nominee[2]
+        return self.images.get(nominee[0])
+
     def public(self):
         return {
+            "year": self.year,
             "title": self.title,
             "ceremony": self.ceremony,
             "closesAt": self.closes_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
             "opensAt": self.opens_at and self.opens_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z"),
             "closed": self.closed(),
             "categories": [{"id": c["id"], "name": c["name"], "original": c["original"],
-                            "nominees": [{"name": n[0], "detail": n[1], "image": self.images.get(n[0])}
+                            "nominees": [{"name": n[0], "detail": n[1], "image": self.image_of(n)}
                                          for n in c["nominees"]]}
                            for c in self.categories],
         }
@@ -245,9 +275,24 @@ class Store:
         self.lock = threading.Lock()
         conn = self._connect()
         try:
+            self._add_years(conn)
             conn.executescript(SCHEMA)
         finally:
             conn.close()
+
+    @staticmethod
+    def _add_years(conn):
+        """A database from before the years: its votes, shown results and winners become FIRST_YEAR's."""
+        for table in YEARLY_TABLES:
+            columns = [row["name"] for row in conn.execute(f"PRAGMA table_info({table})")]
+            if not columns or "year" in columns:
+                continue
+            listed = ", ".join(columns)
+            conn.execute(f"ALTER TABLE {table} RENAME TO {table}_before_years")
+            conn.executescript(SCHEMA)
+            conn.execute(f"INSERT INTO {table} (year, {listed}) SELECT {FIRST_YEAR}, {listed} FROM {table}_before_years")
+            conn.execute(f"DROP TABLE {table}_before_years")
+            conn.commit()
 
     def _connect(self):
         conn = sqlite3.connect(self.path, timeout=10)
@@ -360,41 +405,41 @@ class Store:
 
     # --- Votes
 
-    def votes_of(self, user_id):
+    def votes_of(self, user_id, year):
         result = {}
-        for row in self._read("SELECT category, kind, nominee FROM votes WHERE user_id = ?", (user_id,)):
+        for row in self._read("SELECT category, kind, nominee FROM votes WHERE year = ? AND user_id = ?", (year, user_id)):
             result.setdefault(row["category"], {})[row["kind"]] = row["nominee"]
         return result
 
-    def all_votes(self):
-        return self._read("SELECT * FROM votes ORDER BY at")
+    def all_votes(self, year):
+        return self._read("SELECT * FROM votes WHERE year = ? ORDER BY at", (year,))
 
-    def vote(self, user_id, category, kind, nominee):
-        if nominee is None:
-            self._write(("DELETE FROM votes WHERE user_id = ? AND category = ? AND kind = ?", (user_id, category, kind)))
-        else:
-            self._write(("INSERT INTO votes (user_id, category, kind, nominee, at) VALUES (?, ?, ?, ?, ?) "
-                         "ON CONFLICT(user_id, category, kind) DO UPDATE SET nominee = excluded.nominee, at = excluded.at",
-                         (user_id, category, kind, nominee, now_iso())))
+    def vote(self, year, user_id, category, kind, nominee):
+        self._write(("INSERT INTO votes (year, user_id, category, kind, nominee, at) VALUES (?, ?, ?, ?, ?, ?) "
+                     "ON CONFLICT(year, user_id, category, kind) DO UPDATE SET nominee = excluded.nominee, "
+                     "at = excluded.at", (year, user_id, category, kind, nominee, now_iso())))
 
-    def revealed(self):
-        return {row["category"]: row["at"] for row in self._read("SELECT * FROM revealed")}
+    def revealed(self, year):
+        return {row["category"]: row["at"] for row in self._read("SELECT * FROM revealed WHERE year = ?", (year,))}
 
-    def set_revealed(self, category, shown):
+    def set_revealed(self, year, category, shown):
         if shown:
-            self._write(("INSERT OR IGNORE INTO revealed (category, at) VALUES (?, ?)", (category, now_iso())))
+            self._write(("INSERT OR IGNORE INTO revealed (year, category, at) VALUES (?, ?, ?)",
+                         (year, category, now_iso())))
         else:
-            self._write(("DELETE FROM revealed WHERE category = ?", (category,)))
+            self._write(("DELETE FROM revealed WHERE year = ? AND category = ?", (year, category)))
 
-    def winners(self):
-        return {row["category"]: row["nominee"] for row in self._read("SELECT category, nominee FROM winners")}
+    def winners(self, year):
+        return {row["category"]: row["nominee"]
+                for row in self._read("SELECT category, nominee FROM winners WHERE year = ?", (year,))}
 
-    def set_winner(self, category, nominee):
+    def set_winner(self, year, category, nominee):
         if nominee is None:
-            self._write(("DELETE FROM winners WHERE category = ?", (category,)))
+            self._write(("DELETE FROM winners WHERE year = ? AND category = ?", (year, category)))
         else:
-            self._write(("INSERT INTO winners (category, nominee, at) VALUES (?, ?, ?) ON CONFLICT(category) "
-                         "DO UPDATE SET nominee = excluded.nominee, at = excluded.at", (category, nominee, now_iso())))
+            self._write(("INSERT INTO winners (year, category, nominee, at) VALUES (?, ?, ?, ?) "
+                         "ON CONFLICT(year, category) DO UPDATE SET nominee = excluded.nominee, at = excluded.at",
+                         (year, category, nominee, now_iso())))
 
 
 class Signer:
@@ -470,11 +515,26 @@ def avatar_url(user):
 
 
 class App:
-    def __init__(self, config, data_folder, ballot=None):
+    def __init__(self, config, data_folder, ballots=None):
+        """ballots: the years' Ballots (or a single one); by default every file in ballots/. The latest year is the
+        current vote; the earlier ones are shown as their results."""
         self.config = config
         self.store = Store(data_folder)
-        self.ballot = ballot or Ballot()
+        if ballots is None:
+            ballots = [Ballot(path) for path in ballot_files()]
+        elif isinstance(ballots, Ballot):
+            ballots = [ballots]
+        self.ballots = {ballot.year: ballot for ballot in ballots}
+        self.ballot = self.ballots[max(self.ballots)]  # the current year's
         self.signer = Signer(config.session_secret or self.store.session_secret())
+
+    def ballot_of(self, year=None):
+        """The Ballot of that year (the current one by default); ValidationError for a year there is none of."""
+        if year is None:
+            return self.ballot
+        if isinstance(year, bool) or not isinstance(year, int) or year not in self.ballots:
+            raise ValidationError("Nincs ilyen év.")
+        return self.ballots[year]
 
     def is_admin(self, user_id):
         return user_id in self.config.admins
@@ -490,14 +550,16 @@ class App:
         return {"id": user_id, "name": user["name"] if user else user_id, "username": user["username"] if user else None,
                 "avatarUrl": avatar_url(user)}
 
-    def summary(self):
-        """Everything for the admin page: every vote, the totals per category and kind, and the guessing scores."""
+    def summary(self, year=None):
+        """Everything for the admin page about one year (the current one by default): every vote, the totals per
+        category and kind, and the guessing scores."""
+        ballot = self.ballot_of(year)
         users = self.store.users()
-        votes = self.store.all_votes()
-        winners = self.store.winners()
+        votes = self.store.all_votes(ballot.year)
+        winners = self.store.winners(ballot.year)
         voters = sorted({vote["user_id"] for vote in votes}, key=lambda uid: self.person(uid, users)["name"].lower())
         totals = {c["id"]: {**{kind: [0] * len(c["nominees"]) for kind in KINDS}, "noIdea": dict.fromkeys(KINDS, 0)}
-                  for c in self.ballot.categories}
+                  for c in ballot.categories}
         by_user = {uid: {} for uid in voters}
         for vote in votes:
             counts = totals.get(vote["category"], {}).get(vote["kind"])
@@ -521,19 +583,20 @@ class App:
             "winners": winners,
             "scores": scores,
             "decided": len(winners),
-            "revealed": sorted(self.store.revealed()),
-            "closed": self.ballot.closed(),
+            "revealed": sorted(self.store.revealed(ballot.year)),
+            "closed": ballot.closed(),
+            "year": ballot.year,
         }
-        summary["results"] = self.results(totals)
+        summary["results"] = self.results(ballot.year, totals)
         return summary
 
-    def results(self, totals=None):
+    def results(self, year=None, totals=None):
         """The server's result in every category the admin has shown: per question, the nominees with the most votes
         (all of them on a tie; "Ötletem sincs" never wins, and nobody wins without a vote)."""
         if totals is None:
-            totals = self.summary()["totals"]
+            totals = self.summary(year)["totals"]
         results = {}
-        for category in self.store.revealed():
+        for category in self.store.revealed(self.ballot_of(year).year):
             if category not in totals:
                 continue
             results[category] = {}
@@ -710,6 +773,10 @@ class Handler(BaseHTTPRequestHandler):
             name, content_type = STATIC_FILES[path]
             self._send(HTTPStatus.OK, (STATIC_DIR / name).read_bytes(), content_type,
                        headers={"Cache-Control": "no-cache"})
+        elif LOCAL_IMAGE.fullmatch(path.lstrip("/")) and (STATIC_DIR / path.lstrip("/")).is_file():
+            # The nominees' pictures: they never change under the same name, so browsers may keep them
+            self._send(HTTPStatus.OK, (STATIC_DIR / path.lstrip("/")).read_bytes(), "image/jpeg",
+                       headers={"Cache-Control": "public, max-age=2592000"})
         elif path == PREFIX + "/version.json" and VERSION_FILE.is_file():
             self._send(HTTPStatus.OK, VERSION_FILE.read_bytes())
         elif path in routes:
@@ -788,21 +855,38 @@ class Handler(BaseHTTPRequestHandler):
     def _status(self):
         self._json(HTTPStatus.OK, {"closed": self.app.ballot.closed(), "closesAt": self.app.ballot.public()["closesAt"]})
 
+    def _query_ballot(self):
+        """The Ballot of ?ev=<year> (the current one without it), or None after answering 400."""
+        text = self._query().get("ev")
+        try:
+            return self.app.ballot_of(int(text) if text and text.isdigit() else None if text is None else -1)
+        except ValidationError as e:
+            self._error(HTTPStatus.BAD_REQUEST, str(e))
+            return None
+
     def _ballot(self):
         user_id = self._voter()
         if user_id is None:
             return
-        ballot = self.app.ballot.public()
+        ballot = self._query_ballot()
+        if ballot is None:
+            return
+        public = ballot.public()
+        if ballot is not self.app.ballot:
+            public["closed"] = True  # an earlier year is over, whatever its file says
         # After the deadline: the results of the categories the admin has shown (nothing else about the votes)
-        results = self.app.results() if ballot["closed"] else {}
+        results = self.app.results(ballot.year) if public["closed"] else {}
         # and who really won at The Game Awards, as the admin marks it during the show
-        actual = self.app.store.winners() if ballot["closed"] else {}
-        self._json(HTTPStatus.OK, {**ballot, "votes": self.app.store.votes_of(user_id), "results": results,
+        actual = self.app.store.winners(ballot.year) if public["closed"] else {}
+        self._json(HTTPStatus.OK, {**public, "current": self.app.ballot.year, "years": sorted(self.app.ballots),
+                                   "votes": self.app.store.votes_of(user_id, ballot.year), "results": results,
                                    "actual": actual})
 
     def _summary(self):
         if self._admin() is not None:
-            self._json(HTTPStatus.OK, self.app.summary())
+            ballot = self._query_ballot()
+            if ballot is not None:
+                self._json(HTTPStatus.OK, self.app.summary(ballot.year))
 
     def _access(self):
         if self._admin() is not None:
@@ -852,29 +936,35 @@ class Handler(BaseHTTPRequestHandler):
             raise ValidationError("Válassz egy jelöltet, vagy az „Ötletem sincs, ember” lehetőséget.")
         if body["kind"] == "predict" and body.get("nominee") == NO_IDEA:
             raise ValidationError("Tippelj bátran: itt csak jelöltet lehet választani.")
-        self.app.ballot.check(body.get("category"), body.get("nominee"), allow_no_idea=True)
-        if self.app.ballot.closed():
+        # Only the current year's vote: an earlier year's is over
+        ballot = self.app.ballot
+        if body.get("year", ballot.year) != ballot.year:
+            return self._error(HTTPStatus.CONFLICT, "Ez a szavazás már lezárult.")
+        ballot.check(body.get("category"), body.get("nominee"), allow_no_idea=True)
+        if ballot.closed():
             return self._error(HTTPStatus.CONFLICT, "A szavazás lezárult.")
-        self.app.store.vote(user_id, body["category"], body["kind"], body.get("nominee"))
-        self._json(HTTPStatus.OK, {"votes": self.app.store.votes_of(user_id)})
+        self.app.store.vote(ballot.year, user_id, body["category"], body["kind"], body.get("nominee"))
+        self._json(HTTPStatus.OK, {"votes": self.app.store.votes_of(user_id, ballot.year)})
 
     def _set_revealed(self):
         if self._admin() is None:
             return
         body = self._body()
-        self.app.ballot.check(body.get("category"), None)
+        ballot = self.app.ballot_of(body.get("year"))
+        ballot.check(body.get("category"), None)
         if not isinstance(body.get("shown"), bool):
             raise ValidationError("shown: true vagy false")
-        self.app.store.set_revealed(body["category"], body["shown"])
-        self._json(HTTPStatus.OK, self.app.summary())
+        self.app.store.set_revealed(ballot.year, body["category"], body["shown"])
+        self._json(HTTPStatus.OK, self.app.summary(ballot.year))
 
     def _set_winner(self):
         if self._admin() is None:
             return
         body = self._body()
-        self.app.ballot.check(body.get("category"), body.get("nominee"))
-        self.app.store.set_winner(body["category"], body.get("nominee"))
-        self._json(HTTPStatus.OK, self.app.summary())
+        ballot = self.app.ballot_of(body.get("year"))
+        ballot.check(body.get("category"), body.get("nominee"))
+        self.app.store.set_winner(ballot.year, body["category"], body.get("nominee"))
+        self._json(HTTPStatus.OK, self.app.summary(ballot.year))
 
     def _set_access(self):
         admin_id = self._admin()
