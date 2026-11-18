@@ -70,7 +70,9 @@ const state = { me: null, ballot: null, votes: {}, summary: null, access: null }
 
 const AUTO_ADVANCE_MS = 750;
 const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const ballotUi = { index: 0, done: false, advanceTimer: null, animating: false };
+// The pages: the categories (index), then, once the guessing contest is decided, its page (contest), then the
+// summary (done)
+const ballotUi = { index: 0, done: false, contest: false, advanceTimer: null, animating: false };
 
 // After the deadline the ballot turns into "Díjazottak": the same pages, nobody can vote, every card is black and
 // white; in a category the admin has shown, the most voted nominees (per question) are in colour.
@@ -122,20 +124,29 @@ function renderNav() {
   // Gold dot: a category done (voting), or its result shown (Díjazottak)
   const isDone = (category) => (results ? Boolean(resultOf(category)) : isComplete(category));
   const done = categories.filter(isDone).length;
-  $("step").textContent = ballotUi.done ? "Összegzés" : `${ballotUi.index + 1} / ${categories.length}`;
+  const onCategory = !ballotUi.done && !ballotUi.contest;
+  $("step").textContent = ballotUi.done ? "Összegzés" : ballotUi.contest ? "Tippverseny"
+    : `${ballotUi.index + 1} / ${categories.length}`;
   $("done-count").textContent = results
     ? `${done} / ${categories.length} kategória díjazottja kint`
     : `${done} / ${categories.length} kategória kész`;
   $("progress-bar").style.width = `${(done / categories.length) * 100}%`;
-  $("prev").disabled = !ballotUi.done && ballotUi.index === 0;
+  $("prev").disabled = onCategory && ballotUi.index === 0;
   $("next").disabled = ballotUi.done;
+  const contestDot = hasContest() ? [h("button", {
+    type: "button",
+    class: `dot contest-dot${ballotUi.contest ? " current" : ""}`,
+    title: "Tippverseny",
+    "aria-label": "Tippverseny eredménye",
+    onclick: goToContest,
+  }, "🏅")] : [];
   $("dots").replaceChildren(...categories.map((category, index) => h("button", {
     type: "button",
-    class: `dot${isDone(category) ? " complete" : ""}${!ballotUi.done && index === ballotUi.index ? " current" : ""}`,
+    class: `dot${isDone(category) ? " complete" : ""}${onCategory && index === ballotUi.index ? " current" : ""}`,
     title: `${index + 1}. ${category.name}`,
     "aria-label": `${index + 1}. ${category.name}${isDone(category) ? (results ? " (díjazott kint)" : " (kész)") : ""}`,
     onclick: () => goTo(index),
-  })));
+  })), ...contestDot);
 }
 
 function initials(name) {
@@ -254,26 +265,24 @@ function names(rows) {
   return list.length > 1 ? `${list.slice(0, -1).join(", ")} és ${list[list.length - 1]}` : list[0];
 }
 
-function renderBanner() {
-  const board = resultsMode() ? state.ballot.leaderboard : null;
-  $("results-banner").hidden = !resultsMode() || Boolean(board);
-  $("contest-banner").hidden = !board;
-  if (!board) return;
-  const first = board.rows.filter((row) => row.place === 1);
-  const mine = board.rows.find((row) => row.id === state.me.id);
-  $("contest-banner").replaceChildren(
-    h("div", { class: "contest-trophy", "aria-hidden": "true" }, "🏅"),
-    h("h2", {}, first.length ? "Megvan a tippverseny győztese!" : "Minden díj kiosztva!"),
-    first.length
-      ? h("p", {}, h("b", {}, names(first)), ` tippelt a legjobban: ${first[0].correct} / ${board.categories} talált.`)
-      : h("p", {}, "Ebben az évben senki nem tippelt."),
-    mine ? h("p", { class: "contest-mine" }, `Helyezésed: ${mine.place}. · ${mine.correct} talált`) : null,
-    h("button", { type: "button", class: "contest-button", onclick: () => { goToDone(); scrollToBallot(); } },
-      "A tippverseny teljes eredménye →"));
+function hasContest() {
+  return resultsMode() && Boolean(state.ballot.leaderboard);
 }
 
-function scrollToBallot() {
-  window.scrollTo({ top: $("ballot-view").offsetTop - 16, behavior: reducedMotion.matches ? "auto" : "smooth" });
+// After the last category: the winner's card, then the full order
+function contestPage() {
+  const board = state.ballot.leaderboard;
+  const first = board.rows.filter((row) => row.place === 1);
+  const mine = board.rows.find((row) => row.id === state.me.id);
+  return h("article", { class: "page contest-page" },
+    h("div", { class: "contest-card" },
+      h("div", { class: "contest-trophy", "aria-hidden": "true" }, "🏅"),
+      h("h2", {}, first.length ? "Megvan a tippverseny győztese!" : "Minden díj kiosztva!"),
+      first.length
+        ? h("p", {}, h("b", {}, names(first)), ` tippelt a legjobban: ${first[0].correct} / ${board.categories} talált.`)
+        : h("p", {}, "Ebben az évben senki nem tippelt."),
+      mine ? h("p", { class: "contest-mine" }, `Helyezésed: ${mine.place}. · ${mine.correct} talált`) : null),
+    leaderboardEl(board));
 }
 
 function leaderboardEl(board) {
@@ -283,7 +292,7 @@ function leaderboardEl(board) {
   // The winner in the middle, as on a real podium
   const order = podium.length === 3 ? [podium[1], podium[0], podium[2]] : podium;
   return h("section", { class: "contest" },
-    h("h2", {}, "🏅 Tippverseny"),
+    h("h2", {}, "Teljes eredmény"),
     h("p", { class: "muted small-text" }, "Ki tippelte meg a legtöbb valódi nyertest (🔮). Holtversenynél az előrébb, akinek a "
       + "❤️ kedvence többször nyert; ha ez is egyezik, közös a helyezés."),
     board.rows.length ? h("div", { class: "podium" }, ...order.map((row) => h("div", {
@@ -311,9 +320,7 @@ function resultsSummaryPage() {
   const rows = categories.map((category, index) => h("tr", {}, h("th", { scope: "row" },
     h("button", { type: "button", class: "link-button", onclick: () => goTo(index) }, category.name)),
   real(category), names(category, "predict"), names(category, "pick")));
-  const board = state.ballot.leaderboard;
   return h("article", { class: "page done-page" },
-    board ? leaderboardEl(board) : null,
     h("div", { class: "celebrate", "aria-hidden": "true" }, "🏆"),
     h("h2", {}, shown === categories.length ? "Minden díjazott kint van!" : `${shown} / ${categories.length} díjazott kint`),
     h("p", { class: "muted" }, "Kattints egy kategóriára a részletekért."),
@@ -346,7 +353,13 @@ function donePage() {
 }
 
 function currentPage() {
+  if (ballotUi.contest) return contestPage();
   return ballotUi.done ? donePage() : categoryPage(ballotUi.index);
+}
+
+function pageId() {
+  if (ballotUi.contest) return "tippverseny";
+  return ballotUi.done ? "kesz" : state.ballot.categories[ballotUi.index].id;
 }
 
 // Swaps the page; `direction` is "next", "prev" or null (no animation)
@@ -355,7 +368,7 @@ function showPage(direction) {
   const old = stage.firstElementChild;
   const page = currentPage();
   renderNav();
-  const id = ballotUi.done ? "kesz" : state.ballot.categories[ballotUi.index].id;
+  const id = pageId();
   if (location.hash !== `#${id}`) history.replaceState(null, "", `#${id}`);
   if (!old || !direction || reducedMotion.matches) {
     stage.replaceChildren(page);
@@ -400,21 +413,25 @@ function cancelAdvance() {
 function goTo(index) {
   cancelAdvance();
   if (ballotUi.animating) return;
-  const direction = ballotUi.done || index < ballotUi.index ? "prev" : "next";
-  if (!ballotUi.done && index === ballotUi.index) return;
+  const direction = ballotUi.done || ballotUi.contest || index < ballotUi.index ? "prev" : "next";
+  if (!ballotUi.done && !ballotUi.contest && index === ballotUi.index) return;
   ballotUi.done = false;
+  ballotUi.contest = false;
   ballotUi.index = index;
   showPage(direction);
 }
 
 function goNext() {
   if (ballotUi.done) return;
+  if (ballotUi.contest) return goToDone();
   if (ballotUi.index < state.ballot.categories.length - 1) return goTo(ballotUi.index + 1);
+  if (hasContest()) return goToContest();
   goToDone();
 }
 
 function goPrev() {
-  if (ballotUi.done) return goTo(state.ballot.categories.length - 1);
+  if (ballotUi.done && hasContest()) return goToContest();
+  if (ballotUi.done || ballotUi.contest) return goTo(state.ballot.categories.length - 1);
   if (ballotUi.index > 0) goTo(ballotUi.index - 1);
 }
 
@@ -422,7 +439,17 @@ function goToDone() {
   cancelAdvance();
   if (ballotUi.animating) return;
   ballotUi.done = true;
+  ballotUi.contest = false;
   showPage("next");
+}
+
+function goToContest() {
+  cancelAdvance();
+  if (ballotUi.animating || ballotUi.contest || !hasContest()) return;
+  const direction = ballotUi.done ? "prev" : "next";
+  ballotUi.done = false;
+  ballotUi.contest = true;
+  showPage(direction);
 }
 
 // After both questions are answered: a short pause to see the choice, then the next unanswered category
@@ -452,11 +479,12 @@ function refreshPage() {
 function renderBallot() {
   renderDeadline();
   const results = resultsMode();
-  renderBanner();
+  $("results-banner").hidden = !results;
   $("ballot-tab").textContent = results ? "🏆 Díjazottak" : "🗳️ Szavazás";
   const fromHash = state.ballot.categories.findIndex((c) => `#${c.id}` === location.hash);
   const open = results ? 0 : firstOpenIndex(0);
-  ballotUi.done = fromHash === -1 && (location.hash === "#kesz" || open === -1);
+  ballotUi.contest = fromHash === -1 && location.hash === "#tippverseny" && hasContest();
+  ballotUi.done = fromHash === -1 && !ballotUi.contest && (location.hash === "#kesz" || open === -1);
   ballotUi.index = fromHash !== -1 ? fromHash : Math.max(open, 0);
   showPage(null);
   if (results) watchResults();
@@ -478,8 +506,11 @@ function watchResults() {
       state.ballot.results = ballot.results;
       state.ballot.actual = ballot.actual;
       state.ballot.leaderboard = ballot.leaderboard;
-      renderBanner();
-      const current = !ballotUi.done && state.ballot.categories[ballotUi.index];
+      if (ballotUi.contest && !hasContest()) {  // a winner was taken back meanwhile: the summary instead
+        ballotUi.contest = false;
+        ballotUi.done = true;
+      }
+      const current = !ballotUi.done && !ballotUi.contest && state.ballot.categories[ballotUi.index];
       const fresh = current && ballot.results[current.id] && !before[current.id];
       if (!ballotUi.animating) refreshPage();
       if (fresh) $("stage").firstElementChild.classList.add("just-revealed");
@@ -523,6 +554,7 @@ window.addEventListener("hashchange", () => {
   const index = state.ballot.categories.findIndex((c) => `#${c.id}` === location.hash);
   if (index !== -1) goTo(index);
   else if (location.hash === "#kesz") goToDone();
+  else if (location.hash === "#tippverseny") goToContest();
 });
 $("prev").addEventListener("click", goPrev);
 $("next").addEventListener("click", goNext);

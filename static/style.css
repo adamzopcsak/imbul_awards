@@ -538,24 +538,25 @@ td.real { color: var(--real); font-weight: 600; }
 .year-switch:not([hidden]) + .me { margin-left: 0; }
 
 /* The guessing contest, once every real winner is set */
-.contest-banner {
+.contest-card {
   text-align: center;
-  margin-bottom: 16px;
+  margin-bottom: 24px;
   padding: 22px 20px;
   border-radius: 16px;
   border: 2px solid var(--accent);
-  background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 28%, var(--tile)), var(--tile) 70%);
+  background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 28%, var(--tile)), var(--input) 70%);
   box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 .contest-trophy { font-size: 3rem; animation: trophy 1s cubic-bezier(.3, 1.6, .5, 1); }
-.contest-banner h2 { font-size: 1.6rem; margin: 4px 0 8px; }
-.contest-banner p { line-height: 1.5; }
-.contest-banner b { color: var(--accent); }
+.contest-card h2 { font-size: 1.6rem; margin: 4px 0 8px; }
+.contest-card p { line-height: 1.5; }
+.contest-card b { color: var(--accent); }
 .contest-mine { margin-top: 4px; color: var(--muted); font-weight: 600; }
-.contest-button { margin-top: 14px; padding: .7rem 1.4rem; font-size: 1rem; }
-
-.contest { text-align: center; margin-bottom: 26px; padding-bottom: 22px; border-bottom: 1px solid var(--border); }
-.contest h2 { font-size: 1.6rem; margin-bottom: 6px; }
+.contest { text-align: center; }
+.contest h2 { font-size: 1.25rem; margin-bottom: 6px; }
+/* The contest's own dot at the end of the row */
+.dot.contest-dot { width: auto; height: 18px; padding: 0 4px; border-radius: 9px; font-size: .7rem; line-height: 1;
+  background: color-mix(in srgb, var(--accent) 25%, var(--input)); border-color: var(--accent); }
 .podium { display: flex; justify-content: center; align-items: flex-end; gap: 12px; margin: 20px 0 14px; }
 .podium-step { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 30%; max-width: 200px; }
 .podium-step .medal { font-size: 2.2rem; }
