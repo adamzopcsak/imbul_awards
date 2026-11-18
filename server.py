@@ -17,7 +17,7 @@ Paths:
   GET    /api/ballot                the categories, the nominees and my votes; after the deadline also the shown
                                     results and the real winners (/api/admin/winners)
   PUT    /api/votes                 {"category", "kind": "predict" | "pick", "nominee": index, -1 or null}
-                                    (-1 is "Ötletem sincs, ember", null takes the vote back)
+                                    (-1 is "Ötletem sincs, ember"; a vote can be changed, not taken back)
 Admin only:
   GET    /api/admin/summary         every vote, the totals, the winners and the guessing leaderboard
   PUT    /api/admin/winners         {"category", "nominee": index or null}: the real winner
@@ -848,6 +848,8 @@ class Handler(BaseHTTPRequestHandler):
         body = self._body()
         if body.get("kind") not in KINDS:
             raise ValidationError("kind: predict vagy pick")
+        if body.get("nominee") is None:
+            raise ValidationError("Válassz egy jelöltet, vagy az „Ötletem sincs, ember” lehetőséget.")
         self.app.ballot.check(body.get("category"), body.get("nominee"), allow_no_idea=True)
         if self.app.ballot.closed():
             return self._error(HTTPStatus.CONFLICT, "A szavazás lezárult.")

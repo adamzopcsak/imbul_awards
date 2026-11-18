@@ -170,7 +170,8 @@ function nomineeCard(category, kind, index, nominee) {
     disabled: state.ballot.closed,
     "data-kind": kind,
     "data-index": String(index),
-    onclick: () => vote(category.id, kind, chosen ? null : index),
+    // A vote can be changed, but not taken back: "Ötletem sincs, ember" is the way not to choose
+    onclick: () => { if (!chosen) vote(category.id, kind, index); },
   }, artEl(nominee, index), h("span", { class: "check", "aria-hidden": "true" }, "✓"),
   h("span", { class: "card-text" }, h("span", { class: "card-name" }, nominee.name),
     nominee.detail ? h("span", { class: "card-detail" }, nominee.detail) : null));

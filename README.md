@@ -12,7 +12,7 @@ Every category also offers **🤷 Ötletem sincs, ember** (stored as nominee `-1
 guess; it is counted separately on the admin page and is never a correct guess.
 
 The ballot is paged: one category per page, every nominee as a card with its picture. Clicking a card saves the vote
-at once; clicking it again takes it back. Once both questions of a page are answered, the page lights up and the next
+at once; another card changes it, but a vote cannot be taken back (not choosing is "Ötletem sincs, ember"). Once both questions of a page are answered, the page lights up and the next
 unanswered category slides in by itself; after the last one comes a summary of all your votes. The arrows, the dots
 (gold when a category is done), the ← / → keys and the address (`#goty`, `#kesz` for the summary) move between pages
 by hand. Votes can be changed until the deadline in `nominees.json` (`votingClosesAt`), after which the ballot is
