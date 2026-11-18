@@ -16,6 +16,10 @@
       <h1>🏆 Imbul Awards <span class="year">2026</span></h1>
       <p class="muted">A The Game Awards, az Imbul a Bakterház módra.</p>
     </div>
+    <!-- Only when there is more than one year: the earlier years' results, the current year by default -->
+    <label id="year-switch" class="year-switch" hidden>Év
+      <select id="year-select" aria-label="Melyik év"></select>
+    </label>
     <div id="me" class="me" hidden>
       <span class="person" id="me-person"></span>
       <button type="button" class="secondary small" id="logout">Kijelentkezés</button>

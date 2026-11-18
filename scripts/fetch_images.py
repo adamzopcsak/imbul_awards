@@ -2,7 +2,7 @@
 
 The page shows these pictures straight from upload.wikimedia.org, and a few from Steam's store (DIRECT); they are not
 copied into the repo. Run it again
-after changing nominees.json; names already in images.json are kept, so checked or hand-fixed entries stay. Names
+after changing a ballot (ballots/<year>.json); names already in images.json are kept, so checked or hand-fixed entries stay. Names
 in OVERRIDES use that Wikipedia article instead of a search; None means no picture (the page draws a placeholder).
 
     python scripts/fetch_images.py            # only the missing ones
@@ -19,7 +19,7 @@ import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-NOMINEES = ROOT / "nominees.json"
+BALLOTS = ROOT / "ballots"
 IMAGES = ROOT / "images.json"
 API = "https://en.wikipedia.org/w/api.php"
 WIKIDATA_API = "https://www.wikidata.org/w/api.php"
@@ -139,7 +139,9 @@ def main():
     parser.add_argument("--all", action="store_true")
     args = parser.parse_args()
     images = {} if args.all or not IMAGES.exists() else json.loads(IMAGES.read_text(encoding="utf-8"))
-    categories = json.loads(NOMINEES.read_text(encoding="utf-8"))["categories"]
+    # Every year's nominees: the earlier years' results keep their pictures
+    categories = [category for path in sorted(BALLOTS.glob("*.json"))
+                  for category in json.loads(path.read_text(encoding="utf-8"))["categories"]]
     for category in categories:
         for name, detail in category["nominees"]:
             if name in DIRECT:
