@@ -850,6 +850,8 @@ class Handler(BaseHTTPRequestHandler):
             raise ValidationError("kind: predict vagy pick")
         if body.get("nominee") is None:
             raise ValidationError("Válassz egy jelöltet, vagy az „Ötletem sincs, ember” lehetőséget.")
+        if body["kind"] == "predict" and body.get("nominee") == NO_IDEA:
+            raise ValidationError("Tippelj bátran: itt csak jelöltet lehet választani.")
         self.app.ballot.check(body.get("category"), body.get("nominee"), allow_no_idea=True)
         if self.app.ballot.closed():
             return self._error(HTTPStatus.CONFLICT, "A szavazás lezárult.")
