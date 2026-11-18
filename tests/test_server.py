@@ -314,7 +314,7 @@ class VoteTests(ServerTest):
         self.assertEqual(ballot["votes"], {})
         self.assertFalse(ballot["closed"])
 
-    def test_vote_change_and_withdraw(self):
+    def test_vote_can_be_changed_but_not_taken_back(self):
         response, body = self.vote(self.friend, "goty", "predict", 2)
         self.assertEqual(response.status, 200)
         self.assertEqual(body["votes"], {"goty": {"predict": 2}})
@@ -322,8 +322,12 @@ class VoteTests(ServerTest):
         self.vote(self.friend, "goty", "predict", 1)
         _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
         self.assertEqual(ballot["votes"], {"goty": {"predict": 1, "pick": 5}})
-        _, body = self.vote(self.friend, "goty", "predict", None)
-        self.assertEqual(body["votes"], {"goty": {"pick": 5}})
+        # Not choosing is "Ötletem sincs, ember", not taking the vote back
+        response, _ = self.vote(self.friend, "goty", "predict", None)
+        self.assertEqual(response.status, 400)
+        self.vote(self.friend, "goty", "predict", server.NO_IDEA)
+        _, ballot = self.request("GET", "/api/ballot", cookie=self.friend)
+        self.assertEqual(ballot["votes"], {"goty": {"predict": -1, "pick": 5}})
 
     def test_bad_votes_are_refused(self):
         for category, kind, nominee in (("nope", "predict", 0), ("goty", "maybe", 0), ("goty", "pick", 6),
