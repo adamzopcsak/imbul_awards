@@ -451,7 +451,7 @@ class OpeningTests(ServerTest):
     def test_opening_is_before_the_deadline(self):
         ballot = server.Ballot()
         self.assertLess(ballot.opens_at, ballot.closes_at)
-        self.assertEqual(ballot.opens_at.isoformat(), "2026-12-01T10:00:00+01:00")
+        self.assertEqual(ballot.opens_at.isoformat(), "2026-11-19T08:00:00+01:00")  # brought forward from Dec 1
 
 
 class DijazottakTests(ServerTest):
