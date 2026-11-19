@@ -54,7 +54,7 @@ const dateTime = new Intl.DateTimeFormat("hu-HU", {
 
 function personEl(person, sub) {
   const avatar = person.avatarUrl
-    ? h("img", { src: person.avatarUrl, alt: "", loading: "lazy" })
+    ? h("img", { src: person.avatarUrl, alt: "", loading: "lazy", referrerpolicy: "no-referrer" })
     : h("span", { class: "no-avatar" }, (person.name || "?").slice(0, 1).toUpperCase());
   return h("span", { class: "person" }, avatar,
     h("span", { class: "names" }, h("span", { class: "name" }, person.name),
@@ -660,7 +660,7 @@ function renderScores() {
   const total = state.ballot.categories.length;
   $("scores-note").textContent = decided
     ? `${decided} / ${total} kategória nyertese van megjelölve. A 🔮 tippek számítanak; holtversenynél az dönt, kinek a ❤️ kedvence nyert többször.`
-    : "Még egyik kategória nyertese sincs megjelölve (Összesítés → 🏆).";
+    : "Még egyik kategória valódi nyertese sincs megjelölve (Díjazottak → ⭐ A gálán nyert).";
   $("scores").replaceChildren(...scores.map((s) => h("li", {},
     personEl(s, `${s.predicted} tipp a lezárt kategóriákban`),
     h("span", { class: "score" }, h("b", {}, String(s.correct)), " talált",
